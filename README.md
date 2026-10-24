@@ -11,6 +11,14 @@ Bee is a macOS menu bar app that keeps your Mac awake. It works like Amphetamine
 
 A pause beats a manual keep-awake, which beats the schedule, which beats integrations. By default only the Mac stays awake, so the display can still sleep. Settings can keep the display on too.
 
+## Install
+
+```sh
+brew install --cask szymonograbek/tap/bee
+```
+
+Bee is ad-hoc signed, not notarized. The cask removes the quarantine flag so Gatekeeper lets it open.
+
 ## Development
 
 Requires Xcode, [XcodeGen](https://github.com/yonaskolb/XcodeGen), and [SwiftLint](https://github.com/realm/SwiftLint) (`brew install xcodegen swiftlint`).
@@ -22,6 +30,10 @@ make lint   # swiftlint --strict
 ```
 
 `Bee.xcodeproj` is generated from `project.yml`. Edit `project.yml`, not the project.
+
+## Releasing
+
+Commits follow [Conventional Commits](https://www.conventionalcommits.org) (`feat:`, `fix:`, …); pull requests are checked with commitlint. On every push to `main`, [release-please](https://github.com/googleapis/release-please) keeps a release PR open that bumps `MARKETING_VERSION` in `project.yml` and updates `CHANGELOG.md`. Merging it tags the release, after which the workflow builds `Bee.zip` with `make release`, attaches it to the GitHub release, and updates the cask in [szymonograbek/homebrew-tap](https://github.com/szymonograbek/homebrew-tap) from `packaging/homebrew/bee.rb`.
 
 ## T3 Code integration
 
