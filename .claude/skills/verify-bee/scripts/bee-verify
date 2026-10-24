@@ -52,7 +52,10 @@ cmd_launch() {
     fi
     $fresh && defaults delete "$BUNDLE_ID" 2>/dev/null || true
 
-    open -n "$APP"
+    # T3CODE_HOME points the T3 integration at a synthetic database instead of the real one.
+    local open_args=(-n)
+    [[ -n "${T3CODE_HOME:-}" ]] && open_args+=(--env "T3CODE_HOME=$T3CODE_HOME")
+    open "${open_args[@]}" "$APP"
     local pid=""
     for _ in $(seq 100); do
         pid="$(pgrep -f "^$APP/Contents/MacOS/Bee$" || true)"

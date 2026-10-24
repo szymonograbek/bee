@@ -53,7 +53,7 @@ targets:
     sources:
       - BeeTests
       - Bee/Domain
-      - path: Bee/Integrations/T3/T3ThreadList.swift
+      - path: Bee/Integrations/T3/T3Activity.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.szymonograbek.BeeTests

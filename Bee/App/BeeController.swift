@@ -10,6 +10,7 @@ enum BeeCommand: Equatable {
     case setSchedule(Schedule)
     case setIntegration(IntegrationID, enabled: Bool)
     case setPreventsDisplaySleep(Bool)
+    case setKeepsAwakeForT3AutoResume(Bool)
     case setLaunchAtLogin(Bool)
 }
 
@@ -28,6 +29,7 @@ final class BeeController {
     private(set) var state: BeeState
     private(set) var activity: Activity
     private(set) var preventsDisplaySleep: Bool
+    private(set) var keepsAwakeForT3AutoResume: Bool
     private(set) var loginItem: LoginItemStatus
 
     @ObservationIgnored private let calendar: Calendar
@@ -51,6 +53,7 @@ final class BeeController {
         self.state = state
         self.activity = state.activity(at: Date(), calendar: calendar)
         self.preventsDisplaySleep = snapshot.preventsDisplaySleep
+        self.keepsAwakeForT3AutoResume = snapshot.keepsAwakeForT3AutoResume
         self.loginItem = Self.currentLoginItemStatus()
         self.calendar = calendar
         self.defaults = defaults
@@ -76,6 +79,9 @@ final class BeeController {
         case let .setPreventsDisplaySleep(prevents):
             preventsDisplaySleep = prevents
             reconcile()
+        case let .setKeepsAwakeForT3AutoResume(keepsAwake):
+            keepsAwakeForT3AutoResume = keepsAwake
+            restartPollers()
         case let .setLaunchAtLogin(launches):
             setLaunchAtLogin(launches)
         }
@@ -119,7 +125,8 @@ final class BeeController {
             mode: state.mode,
             schedule: state.schedule,
             enabledIntegrations: Set(IntegrationID.allCases.filter(isEnabled)),
-            preventsDisplaySleep: preventsDisplaySleep
+            preventsDisplaySleep: preventsDisplaySleep,
+            keepsAwakeForT3AutoResume: keepsAwakeForT3AutoResume
         )
         guard snapshot != lastSaved else { return }
         snapshot.save(to: defaults)
@@ -145,7 +152,8 @@ final class BeeController {
 
     private func observeSystemEvents() {
         let workspace = NSWorkspace.shared.notificationCenter
-        observe(NSWorkspace.didWakeNotification, on: workspace) { $0.systemDidWake() }
+        // Readings taken before sleep are stale.
+        observe(NSWorkspace.didWakeNotification, on: workspace) { $0.restartPollers() }
         let timeChanges: [Notification.Name] = [
             .NSSystemClockDidChange,
             .NSSystemTimeZoneDidChange,
@@ -169,8 +177,8 @@ final class BeeController {
         observers.append(observer)
     }
 
-    /// Readings taken before sleep are stale, so every poller starts over with an immediate read.
-    private func systemDidWake() {
+    /// Every poller starts over with an immediate read.
+    private func restartPollers() {
         for task in pollers.values { task.cancel() }
         pollers.removeAll()
         send(.tick)
@@ -188,21 +196,33 @@ final class BeeController {
         }
     }
 
-    /// One sequential loop per integration, so reads never overlap. Cancellation also kills child processes.
+    /// One sequential loop per integration, so reads never overlap. Triggers that arrive during a read
+    /// collapse into one follow-up read. Cancellation also kills child processes.
     private func startPoller(_ id: IntegrationID) -> Task<Void, Never> {
-        Task { [weak self] in
-            while !Task.isCancelled {
-                let reading = await Self.read(id)
-                guard !Task.isCancelled else { return }
-                self?.send(.integrationChanged(id, .reported(reading)))
-                try? await Task.sleep(for: .seconds(30))
+        let integration = integration(id)
+        return Task { [weak self] in
+            let triggers = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+            triggers.continuation.yield()
+            await withDiscardingTaskGroup { group in
+                group.addTask {
+                    for await _ in integration.changes() { triggers.continuation.yield() }
+                }
+                group.addTask {
+                    while (try? await Task.sleep(for: .seconds(60))) != nil { triggers.continuation.yield() }
+                }
+                for await _ in triggers.stream {
+                    let reading = await integration.read()
+                    guard !Task.isCancelled else { break }
+                    self?.send(.integrationChanged(id, .reported(reading)))
+                }
+                group.cancelAll()
             }
         }
     }
 
-    nonisolated private static func read(_ id: IntegrationID) async -> IntegrationReading {
+    private func integration(_ id: IntegrationID) -> any Integration {
         switch id {
-        case .t3Code: await T3Integration().read()
+        case .t3Code: T3Integration(keepsAwakeForAutoResume: keepsAwakeForT3AutoResume)
         }
     }
 
@@ -237,13 +257,15 @@ private struct Snapshot: Codable, Equatable {
     var schedule: Schedule
     var enabledIntegrations: Set<IntegrationID>
     var preventsDisplaySleep: Bool
+    var keepsAwakeForT3AutoResume: Bool
 
     private static let key = "bee.snapshot.v1"
     private static let firstLaunch = Self(
         mode: .automatic,
         schedule: .workHours,
         enabledIntegrations: [.t3Code],
-        preventsDisplaySleep: false
+        preventsDisplaySleep: false,
+        keepsAwakeForT3AutoResume: true
     )
 
     /// A missing or unreadable value falls back to first-launch defaults rather than failing to start.
@@ -258,5 +280,19 @@ private struct Snapshot: Codable, Equatable {
     func save(to defaults: UserDefaults) {
         guard let data = try? JSONEncoder().encode(self) else { return }
         defaults.set(data, forKey: Self.key)
+    }
+}
+
+private extension Snapshot {
+    /// Settings added after the first release decode with their first-launch default, so an upgrade keeps the
+    /// user's other settings instead of falling back to first-launch defaults.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try container.decode(Mode.self, forKey: .mode)
+        schedule = try container.decode(Schedule.self, forKey: .schedule)
+        enabledIntegrations = try container.decode(Set<IntegrationID>.self, forKey: .enabledIntegrations)
+        preventsDisplaySleep = try container.decode(Bool.self, forKey: .preventsDisplaySleep)
+        keepsAwakeForT3AutoResume = try container.decodeIfPresent(Bool.self, forKey: .keepsAwakeForT3AutoResume)
+            ?? Self.firstLaunch.keepsAwakeForT3AutoResume
     }
 }

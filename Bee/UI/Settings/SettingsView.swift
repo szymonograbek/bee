@@ -102,6 +102,7 @@ private struct IntegrationSettings: View {
                         Text(id.explanation)
                     }
                     if bee.isEnabled(id) {
+                        IntegrationOptions(id: id, bee: bee)
                         LabeledContent("Status") {
                             IntegrationStatus(state: bee.state.integrations[id, default: .disabled])
                         }
@@ -110,6 +111,24 @@ private struct IntegrationSettings: View {
             }
         }
         .settingsPane()
+    }
+}
+
+private struct IntegrationOptions: View {
+    let id: IntegrationID
+    let bee: BeeController
+
+    var body: some View {
+        switch id {
+        case .t3Code:
+            Toggle(isOn: Binding(
+                get: { bee.keepsAwakeForT3AutoResume },
+                set: { bee.perform(.setKeepsAwakeForT3AutoResume($0)) }
+            )) {
+                Text("Wait for auto-resume")
+                Text("Stays awake while a thread that hit a usage limit waits to resume on its own.")
+            }
+        }
     }
 }
 
@@ -146,7 +165,7 @@ private struct IntegrationStatus: View {
 private extension IntegrationID {
     var explanation: String {
         switch self {
-        case .t3Code: "Keeps your Mac awake while any T3 Code thread is running. Checked every 30 seconds."
+        case .t3Code: "Keeps your Mac awake while any T3 Code thread is running or waiting on you."
         }
     }
 }

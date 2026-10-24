@@ -33,8 +33,11 @@ enum IntegrationState: Equatable, Sendable {
     }
 }
 
-/// A source of "keep awake" demand that Bee polls.
+/// A source of "keep awake" demand. Bee reads it on start, after each change it signals, and on a slow
+/// fallback timer in case a change goes unsignaled.
 protocol Integration: Sendable {
     var id: IntegrationID { get }
     func read() async -> IntegrationReading
+    /// Yields when a fresh `read` may give a different answer. Ends when the caller stops iterating.
+    func changes() -> AsyncStream<Void>
 }
