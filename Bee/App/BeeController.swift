@@ -9,9 +9,15 @@ enum BeeCommand: Equatable {
     case resumeAutomatic
     case setSchedule(Schedule)
     case setIntegration(IntegrationID, enabled: Bool)
-    case setPreventsDisplaySleep(Bool)
-    case setKeepsAwakeForT3AutoResume(Bool)
-    case setLaunchAtLogin(Bool)
+    case setOption(BeeOption, Bool)
+}
+
+/// An on/off choice in Settings.
+enum BeeOption: Equatable {
+    case launchAtLogin
+    case preventsDisplaySleep
+    case keepsAwakeWithLidClosed
+    case keepsAwakeForT3AutoResume
 }
 
 /// Mirrors `SMAppService.mainApp.status`, which is the source of truth, so it is never persisted.
@@ -22,7 +28,8 @@ enum LoginItemStatus: Equatable {
     case failed(String)
 }
 
-/// Owns `BeeState` and every effect derived from it: the power assertion, timers, pollers, and persistence.
+/// Owns `BeeState` and every effect derived from it: the power assertion, disabled sleep, timers, pollers, and
+/// persistence.
 @MainActor
 @Observable
 final class BeeController {
@@ -31,10 +38,12 @@ final class BeeController {
     private(set) var preventsDisplaySleep: Bool
     private(set) var keepsAwakeForT3AutoResume: Bool
     private(set) var loginItem: LoginItemStatus
+    private(set) var keepsAwakeWithLidClosed: Bool
 
     @ObservationIgnored private let calendar: Calendar
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let power = PowerAssertion()
+    @ObservationIgnored private let sleepDisabler: SleepDisabler
     @ObservationIgnored private var lastSaved: Snapshot
     @ObservationIgnored private var wakeTask: Task<Void, Never>?
     @ObservationIgnored private var pollers: [IntegrationID: Task<Void, Never>] = [:]
@@ -55,12 +64,15 @@ final class BeeController {
         self.preventsDisplaySleep = snapshot.preventsDisplaySleep
         self.keepsAwakeForT3AutoResume = snapshot.keepsAwakeForT3AutoResume
         self.loginItem = Self.currentLoginItemStatus()
+        self.keepsAwakeWithLidClosed = snapshot.keepsAwakeWithLidClosed
+        self.sleepDisabler = SleepDisabler(defaults: defaults)
         self.calendar = calendar
         self.defaults = defaults
         self.lastSaved = snapshot
         observeSystemEvents()
         // Normalizes a persisted pause or keep-awake that expired while Bee was not running.
         send(.tick)
+        sleepDisabler.refreshPermission()
     }
 
     func perform(_ command: BeeCommand) {
@@ -76,14 +88,8 @@ final class BeeController {
             send(.scheduleChanged(schedule))
         case let .setIntegration(id, enabled):
             setIntegration(id, enabled: enabled)
-        case let .setPreventsDisplaySleep(prevents):
-            preventsDisplaySleep = prevents
-            reconcile()
-        case let .setKeepsAwakeForT3AutoResume(keepsAwake):
-            keepsAwakeForT3AutoResume = keepsAwake
-            restartPollers()
-        case let .setLaunchAtLogin(launches):
-            setLaunchAtLogin(launches)
+        case let .setOption(option, isOn):
+            setOption(option, isOn)
         }
     }
 
@@ -91,8 +97,14 @@ final class BeeController {
         state.integrations[id] != .disabled
     }
 
-    func refreshLoginItem() {
+    var lidSleepPermission: LidSleepPermission {
+        sleepDisabler.permission
+    }
+
+    /// Re-reads what the user can change outside Bee: login items and sudoers.
+    func refreshSystemStatus() {
         loginItem = Self.currentLoginItemStatus()
+        sleepDisabler.refreshPermission()
     }
 
     // MARK: State
@@ -102,6 +114,21 @@ final class BeeController {
         next.handle(event, at: Date())
         if next != state { state = next }
         reconcile()
+    }
+
+    private func setOption(_ option: BeeOption, _ isOn: Bool) {
+        switch option {
+        case .launchAtLogin:
+            setLaunchAtLogin(isOn)
+        case .preventsDisplaySleep:
+            preventsDisplaySleep = isOn
+            reconcile()
+        case .keepsAwakeWithLidClosed:
+            setKeepsAwakeWithLidClosed(isOn)
+        case .keepsAwakeForT3AutoResume:
+            keepsAwakeForT3AutoResume = isOn
+            restartPollers()
+        }
     }
 
     private func setIntegration(_ id: IntegrationID, enabled: Bool) {
@@ -115,6 +142,7 @@ final class BeeController {
         let current = state.activity(at: now, calendar: calendar)
         if current != activity { activity = current }
         power.hold(current.isAwake ? (preventsDisplaySleep ? .display : .system) : nil)
+        sleepDisabler.hold(current.isAwake && keepsAwakeWithLidClosed ? .disabled : .allowed)
         save()
         armWake(now: now)
         reconcilePollers()
@@ -126,6 +154,7 @@ final class BeeController {
             schedule: state.schedule,
             enabledIntegrations: Set(IntegrationID.allCases.filter(isEnabled)),
             preventsDisplaySleep: preventsDisplaySleep,
+            keepsAwakeWithLidClosed: keepsAwakeWithLidClosed,
             keepsAwakeForT3AutoResume: keepsAwakeForT3AutoResume
         )
         guard snapshot != lastSaved else { return }
@@ -154,6 +183,7 @@ final class BeeController {
         let workspace = NSWorkspace.shared.notificationCenter
         // Readings taken before sleep are stale.
         observe(NSWorkspace.didWakeNotification, on: workspace) { $0.restartPollers() }
+        observe(NSApplication.willTerminateNotification, on: .default) { $0.sleepDisabler.releaseBeforeExit() }
         let timeChanges: [Notification.Name] = [
             .NSSystemClockDidChange,
             .NSSystemTimeZoneDidChange,
@@ -177,14 +207,56 @@ final class BeeController {
         observers.append(observer)
     }
 
+    // MARK: Lid sleep
+
+    /// Turning it on without permission installs the sudoers rule first, and the setting only sticks once
+    /// sudo confirms it.
+    private func setKeepsAwakeWithLidClosed(_ keeps: Bool) {
+        guard keeps else {
+            keepsAwakeWithLidClosed = false
+            reconcile()
+            return
+        }
+        Task {
+            guard await sleepDisabler.requestPermission() else { return }
+            keepsAwakeWithLidClosed = true
+            reconcile()
+        }
+    }
+
+    // MARK: Login item
+
+    private func setLaunchAtLogin(_ launches: Bool) {
+        do {
+            if launches {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            loginItem = Self.currentLoginItemStatus()
+        } catch {
+            loginItem = .failed(error.localizedDescription)
+        }
+    }
+
+    private static func currentLoginItemStatus() -> LoginItemStatus {
+        switch SMAppService.mainApp.status {
+        case .enabled: .enabled
+        case .requiresApproval: .requiresApproval
+        case .notRegistered, .notFound: .disabled
+        @unknown default: .disabled
+        }
+    }
+}
+
+// MARK: Integrations
+extension BeeController {
     /// Every poller starts over with an immediate read.
     private func restartPollers() {
         for task in pollers.values { task.cancel() }
         pollers.removeAll()
         send(.tick)
     }
-
-    // MARK: Integrations
 
     private func reconcilePollers() {
         for id in IntegrationID.allCases {
@@ -224,75 +296,5 @@ final class BeeController {
         switch id {
         case .t3Code: T3Integration(keepsAwakeForAutoResume: keepsAwakeForT3AutoResume)
         }
-    }
-
-    // MARK: Login item
-
-    private func setLaunchAtLogin(_ launches: Bool) {
-        do {
-            if launches {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
-            refreshLoginItem()
-        } catch {
-            loginItem = .failed(error.localizedDescription)
-        }
-    }
-
-    private static func currentLoginItemStatus() -> LoginItemStatus {
-        switch SMAppService.mainApp.status {
-        case .enabled: .enabled
-        case .requiresApproval: .requiresApproval
-        case .notRegistered, .notFound: .disabled
-        @unknown default: .disabled
-        }
-    }
-}
-
-/// Everything Bee remembers across launches, stored as one value under one key.
-private struct Snapshot: Codable, Equatable {
-    var mode: Mode
-    var schedule: Schedule
-    var enabledIntegrations: Set<IntegrationID>
-    var preventsDisplaySleep: Bool
-    var keepsAwakeForT3AutoResume: Bool
-
-    private static let key = "bee.snapshot.v1"
-    private static let firstLaunch = Self(
-        mode: .automatic,
-        schedule: .workHours,
-        enabledIntegrations: [.t3Code],
-        preventsDisplaySleep: false,
-        keepsAwakeForT3AutoResume: true
-    )
-
-    /// A missing or unreadable value falls back to first-launch defaults rather than failing to start.
-    static func load(from defaults: UserDefaults) -> Self {
-        guard
-            let data = defaults.data(forKey: key),
-            let snapshot = try? JSONDecoder().decode(Self.self, from: data)
-        else { return firstLaunch }
-        return snapshot
-    }
-
-    func save(to defaults: UserDefaults) {
-        guard let data = try? JSONEncoder().encode(self) else { return }
-        defaults.set(data, forKey: Self.key)
-    }
-}
-
-private extension Snapshot {
-    /// Settings added after the first release decode with their first-launch default, so an upgrade keeps the
-    /// user's other settings instead of falling back to first-launch defaults.
-    init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        mode = try container.decode(Mode.self, forKey: .mode)
-        schedule = try container.decode(Schedule.self, forKey: .schedule)
-        enabledIntegrations = try container.decode(Set<IntegrationID>.self, forKey: .enabledIntegrations)
-        preventsDisplaySleep = try container.decode(Bool.self, forKey: .preventsDisplaySleep)
-        keepsAwakeForT3AutoResume = try container.decodeIfPresent(Bool.self, forKey: .keepsAwakeForT3AutoResume)
-            ?? Self.firstLaunch.keepsAwakeForT3AutoResume
     }
 }

@@ -19,7 +19,8 @@ cask "bee" do
                    args: ["-dr", "com.apple.quarantine", "#{appdir}/Bee.app"]
   end
 
-  uninstall quit: "com.szymonograbek.Bee"
+  uninstall quit:   "com.szymonograbek.Bee",
+            delete: "/etc/sudoers.d/bee"
 
   zap trash: "~/Library/Preferences/com.szymonograbek.Bee.plist"
 end

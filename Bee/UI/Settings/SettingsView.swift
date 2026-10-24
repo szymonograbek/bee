@@ -17,7 +17,7 @@ struct SettingsView: View {
             }
         }
         .background(BringWindowForward())
-        .onAppear { bee.refreshLoginItem() }
+        .onAppear { bee.refreshSystemStatus() }
     }
 }
 
@@ -56,7 +56,7 @@ private struct GeneralSettings: View {
             Section {
                 Toggle("Launch at login", isOn: Binding(
                     get: { bee.loginItem == .enabled || bee.loginItem == .requiresApproval },
-                    set: { bee.perform(.setLaunchAtLogin($0)) }
+                    set: { bee.perform(.setOption(.launchAtLogin, $0)) }
                 ))
                 switch bee.loginItem {
                 case .requiresApproval:
@@ -76,10 +76,27 @@ private struct GeneralSettings: View {
             Section {
                 Toggle(isOn: Binding(
                     get: { bee.preventsDisplaySleep },
-                    set: { bee.perform(.setPreventsDisplaySleep($0)) }
+                    set: { bee.perform(.setOption(.preventsDisplaySleep, $0)) }
                 )) {
                     Text("Keep the display on")
                     Text("By default only the Mac stays awake, and the display can still turn off.")
+                }
+            }
+            Section {
+                Toggle(isOn: Binding(
+                    get: { bee.keepsAwakeWithLidClosed },
+                    set: { bee.perform(.setOption(.keepsAwakeWithLidClosed, $0)) }
+                )) {
+                    Text("Keep awake with the lid closed")
+                    Text(
+                        "While Bee is keeping your Mac awake, closing the lid won't put it to sleep. "
+                            + "Bee asks for your password once to allow this."
+                    )
+                }
+                .disabled(bee.lidSleepPermission == .checking || bee.lidSleepPermission == .installing)
+                if case let .failed(message) = bee.lidSleepPermission {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
                 }
             }
         }
@@ -123,7 +140,7 @@ private struct IntegrationOptions: View {
         case .t3Code:
             Toggle(isOn: Binding(
                 get: { bee.keepsAwakeForT3AutoResume },
-                set: { bee.perform(.setKeepsAwakeForT3AutoResume($0)) }
+                set: { bee.perform(.setOption(.keepsAwakeForT3AutoResume, $0)) }
             )) {
                 Text("Wait for auto-resume")
                 Text("Stays awake while a thread that hit a usage limit waits to resume on its own.")

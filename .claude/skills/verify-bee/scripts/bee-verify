@@ -251,6 +251,7 @@ cmd_state() {
     cmd_menu_items | sed 's/^/  /'
     echo "power assertions held by pid $pid:"
     pmset -g assertions | grep "pid $pid(Bee)" | sed -E 's/^ +/  /' || echo "  (none)"
+    echo "sleep disabled: $(pmset -g | awk '$1 == "SleepDisabled" { print $2 }')"
     echo "saved snapshot:"
     defaults export "$BUNDLE_ID" - | /usr/bin/python3 -I -c '
 import json, plistlib, sys
@@ -332,7 +333,7 @@ case "${1:-}" in
         cat <<'USAGE'
 bee-verify launch [--fresh]        build into build/verify, quit any running Bee, launch ours, wait for its menu bar item
 bee-verify doctor                  is this instance worth driving?
-bee-verify state                   status item label, menu, power assertions, saved snapshot
+bee-verify state                   status item label, menu, power assertions, SleepDisabled, saved snapshot
 bee-verify menu-items              list the open menu's items ([item] clickable, [text] status line)
 bee-verify menu <item> [subitem]   click a menu path, e.g. menu "Keep Awake" "15 Minutes"
 bee-verify settings [tab]          open Settings on General|Schedule|Integrations and dump its controls
