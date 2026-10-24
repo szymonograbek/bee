@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.0](https://github.com/szymonograbek/bee/compare/v1.0.0...v1.1.0) (2026-10-24)
+
+
+### Features
+
+* add bee app icon and split developer docs ([de21f66](https://github.com/szymonograbek/bee/commit/de21f66288eb3045070267884b7a32dcc744bfe1))
+* add bee app icon and split developer docs ([7c95ef4](https://github.com/szymonograbek/bee/commit/7c95ef4cdd1f01bbe0a946b7aa3e69f533411f8c))
+* stop keeping awake on low battery ([60ae7ca](https://github.com/szymonograbek/bee/commit/60ae7ca28a3a10165b7899f95e0c26f1bc7a477d))
+* stop keeping awake on low battery ([9304713](https://github.com/szymonograbek/bee/commit/93047133306cdb2cc1dc66ab7a39580289f89e85))
+
+
+### Bug Fixes
+
+* **homebrew:** use current depends_on macos syntax ([ca5eb48](https://github.com/szymonograbek/bee/commit/ca5eb489fdb560b7cf079a6a1a325b1ac22a1764))
+* **homebrew:** use current depends_on macos syntax ([2becf77](https://github.com/szymonograbek/bee/commit/2becf771aef26e6f09c7762b16f5211d81fbcb9e))
+
 ## 1.0.0 (2026-10-24)
 
 
