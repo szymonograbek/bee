@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1](https://github.com/szymonograbek/bee/compare/v1.1.0...v1.1.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* stop the settings toolbar flashing on tab switch ([178fb94](https://github.com/szymonograbek/bee/commit/178fb94009fa02c306fc54e4f16e7c20ec3c9685))
+* stop the settings toolbar flashing on tab switch ([c2415f4](https://github.com/szymonograbek/bee/commit/c2415f4428b5634a550ec8a67be3ff90422c87cc))
+
 ## [1.1.0](https://github.com/szymonograbek/bee/compare/v1.0.0...v1.1.0) (2026-10-24)
 
 
