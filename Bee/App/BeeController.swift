@@ -11,6 +11,7 @@ enum BeeCommand: Equatable {
     case setIntegration(IntegrationID, enabled: Bool)
     case setPreventsDisplaySleep(Bool)
     case setLaunchAtLogin(Bool)
+    case setKeepsAwakeWithLidClosed(Bool)
 }
 
 /// Mirrors `SMAppService.mainApp.status`, which is the source of truth, so it is never persisted.
@@ -21,7 +22,8 @@ enum LoginItemStatus: Equatable {
     case failed(String)
 }
 
-/// Owns `BeeState` and every effect derived from it: the power assertion, timers, pollers, and persistence.
+/// Owns `BeeState` and every effect derived from it: the power assertion, disabled sleep, timers, pollers, and
+/// persistence.
 @MainActor
 @Observable
 final class BeeController {
@@ -29,10 +31,12 @@ final class BeeController {
     private(set) var activity: Activity
     private(set) var preventsDisplaySleep: Bool
     private(set) var loginItem: LoginItemStatus
+    private(set) var keepsAwakeWithLidClosed: Bool
 
     @ObservationIgnored private let calendar: Calendar
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let power = PowerAssertion()
+    @ObservationIgnored private let sleepDisabler: SleepDisabler
     @ObservationIgnored private var lastSaved: Snapshot
     @ObservationIgnored private var wakeTask: Task<Void, Never>?
     @ObservationIgnored private var pollers: [IntegrationID: Task<Void, Never>] = [:]
@@ -52,12 +56,15 @@ final class BeeController {
         self.activity = state.activity(at: Date(), calendar: calendar)
         self.preventsDisplaySleep = snapshot.preventsDisplaySleep
         self.loginItem = Self.currentLoginItemStatus()
+        self.keepsAwakeWithLidClosed = snapshot.keepsAwakeWithLidClosed
+        self.sleepDisabler = SleepDisabler(defaults: defaults)
         self.calendar = calendar
         self.defaults = defaults
         self.lastSaved = snapshot
         observeSystemEvents()
         // Normalizes a persisted pause or keep-awake that expired while Bee was not running.
         send(.tick)
+        sleepDisabler.refreshPermission()
     }
 
     func perform(_ command: BeeCommand) {
@@ -78,6 +85,8 @@ final class BeeController {
             reconcile()
         case let .setLaunchAtLogin(launches):
             setLaunchAtLogin(launches)
+        case let .setKeepsAwakeWithLidClosed(keeps):
+            setKeepsAwakeWithLidClosed(keeps)
         }
     }
 
@@ -85,8 +94,14 @@ final class BeeController {
         state.integrations[id] != .disabled
     }
 
-    func refreshLoginItem() {
+    var lidSleepPermission: LidSleepPermission {
+        sleepDisabler.permission
+    }
+
+    /// Re-reads what the user can change outside Bee: login items and sudoers.
+    func refreshSystemStatus() {
         loginItem = Self.currentLoginItemStatus()
+        sleepDisabler.refreshPermission()
     }
 
     // MARK: State
@@ -109,6 +124,7 @@ final class BeeController {
         let current = state.activity(at: now, calendar: calendar)
         if current != activity { activity = current }
         power.hold(current.isAwake ? (preventsDisplaySleep ? .display : .system) : nil)
+        sleepDisabler.hold(current.isAwake && keepsAwakeWithLidClosed ? .disabled : .allowed)
         save()
         armWake(now: now)
         reconcilePollers()
@@ -119,7 +135,8 @@ final class BeeController {
             mode: state.mode,
             schedule: state.schedule,
             enabledIntegrations: Set(IntegrationID.allCases.filter(isEnabled)),
-            preventsDisplaySleep: preventsDisplaySleep
+            preventsDisplaySleep: preventsDisplaySleep,
+            keepsAwakeWithLidClosed: keepsAwakeWithLidClosed
         )
         guard snapshot != lastSaved else { return }
         snapshot.save(to: defaults)
@@ -146,6 +163,7 @@ final class BeeController {
     private func observeSystemEvents() {
         let workspace = NSWorkspace.shared.notificationCenter
         observe(NSWorkspace.didWakeNotification, on: workspace) { $0.systemDidWake() }
+        observe(NSApplication.willTerminateNotification, on: .default) { $0.sleepDisabler.releaseBeforeExit() }
         let timeChanges: [Notification.Name] = [
             .NSSystemClockDidChange,
             .NSSystemTimeZoneDidChange,
@@ -206,6 +224,23 @@ final class BeeController {
         }
     }
 
+    // MARK: Lid sleep
+
+    /// Turning it on without permission installs the sudoers rule first, and the setting only sticks once
+    /// sudo confirms it.
+    private func setKeepsAwakeWithLidClosed(_ keeps: Bool) {
+        guard keeps else {
+            keepsAwakeWithLidClosed = false
+            reconcile()
+            return
+        }
+        Task {
+            guard await sleepDisabler.requestPermission() else { return }
+            keepsAwakeWithLidClosed = true
+            reconcile()
+        }
+    }
+
     // MARK: Login item
 
     private func setLaunchAtLogin(_ launches: Bool) {
@@ -215,7 +250,7 @@ final class BeeController {
             } else {
                 try SMAppService.mainApp.unregister()
             }
-            refreshLoginItem()
+            loginItem = Self.currentLoginItemStatus()
         } catch {
             loginItem = .failed(error.localizedDescription)
         }
@@ -228,35 +263,5 @@ final class BeeController {
         case .notRegistered, .notFound: .disabled
         @unknown default: .disabled
         }
-    }
-}
-
-/// Everything Bee remembers across launches, stored as one value under one key.
-private struct Snapshot: Codable, Equatable {
-    var mode: Mode
-    var schedule: Schedule
-    var enabledIntegrations: Set<IntegrationID>
-    var preventsDisplaySleep: Bool
-
-    private static let key = "bee.snapshot.v1"
-    private static let firstLaunch = Self(
-        mode: .automatic,
-        schedule: .workHours,
-        enabledIntegrations: [.t3Code],
-        preventsDisplaySleep: false
-    )
-
-    /// A missing or unreadable value falls back to first-launch defaults rather than failing to start.
-    static func load(from defaults: UserDefaults) -> Self {
-        guard
-            let data = defaults.data(forKey: key),
-            let snapshot = try? JSONDecoder().decode(Self.self, from: data)
-        else { return firstLaunch }
-        return snapshot
-    }
-
-    func save(to defaults: UserDefaults) {
-        guard let data = try? JSONEncoder().encode(self) else { return }
-        defaults.set(data, forKey: Self.key)
     }
 }

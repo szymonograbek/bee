@@ -17,7 +17,7 @@ struct SettingsView: View {
             }
         }
         .background(BringWindowForward())
-        .onAppear { bee.refreshLoginItem() }
+        .onAppear { bee.refreshSystemStatus() }
     }
 }
 
@@ -80,6 +80,23 @@ private struct GeneralSettings: View {
                 )) {
                     Text("Keep the display on")
                     Text("By default only the Mac stays awake, and the display can still turn off.")
+                }
+            }
+            Section {
+                Toggle(isOn: Binding(
+                    get: { bee.keepsAwakeWithLidClosed },
+                    set: { bee.perform(.setKeepsAwakeWithLidClosed($0)) }
+                )) {
+                    Text("Keep awake with the lid closed")
+                    Text(
+                        "While Bee is keeping your Mac awake, closing the lid won't put it to sleep. "
+                            + "Bee asks for your password once to allow this."
+                    )
+                }
+                .disabled(bee.lidSleepPermission == .checking || bee.lidSleepPermission == .installing)
+                if case let .failed(message) = bee.lidSleepPermission {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
                 }
             }
         }

@@ -54,6 +54,8 @@ targets:
       - BeeTests
       - Bee/Domain
       - path: Bee/Integrations/T3/T3ThreadList.swift
+      - path: Bee/System/LidSleepCommands.swift
+      - path: Bee/App/Snapshot.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.szymonograbek.BeeTests
