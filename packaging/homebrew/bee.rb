@@ -4,10 +4,10 @@ cask "bee" do
   version "__VERSION__"
   sha256 "__SHA256__"
 
-  url "https://github.com/szymonograbek/keep-me-up/releases/download/v#{version}/Bee.zip"
+  url "https://github.com/szymonograbek/bee/releases/download/v#{version}/Bee.zip"
   name "Bee"
   desc "Menu bar app that keeps your Mac awake"
-  homepage "https://github.com/szymonograbek/keep-me-up"
+  homepage "https://github.com/szymonograbek/bee"
 
   depends_on macos: ">= :sequoia"
 
