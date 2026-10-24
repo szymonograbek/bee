@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: macos-26
+    env:
+      TAG: ${{ needs.release-please.outputs.tag_name }}
+      VERSION: ${{ needs.release-please.outputs.version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Install tools
+        run: brew install xcodegen swiftlint
+
+      - name: Build
+        run: make release
+
+      - name: Upload to release
+        run: gh release upload "$TAG" build/Bee.zip --clobber
+
+      - uses: actions/checkout@v5
+        with:
+          repository: szymonograbek/homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          path: homebrew-tap
+
+      - name: Update Homebrew cask
+        working-directory: homebrew-tap
+        run: |
+          sha256=$(shasum -a 256 ../build/Bee.zip | cut -d ' ' -f 1)
+          mkdir -p Casks
+          sed -e "s/__VERSION__/$VERSION/" -e "s/__SHA256__/$sha256/" \
+            -e '/^# /d' ../packaging/homebrew/bee.rb > Casks/bee.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/bee.rb
+          git commit -m "chore: bee $VERSION"
+          git push
