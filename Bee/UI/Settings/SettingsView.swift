@@ -16,6 +16,7 @@ struct SettingsView: View {
                 IntegrationSettings(bee: bee)
             }
         }
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .background(BringWindowForward())
         .onAppear { bee.refreshSystemStatus() }
     }
