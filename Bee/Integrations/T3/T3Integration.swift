@@ -1,87 +1,62 @@
 import Foundation
 
-/// Keeps the Mac awake while any T3 Code thread is running.
+/// Keeps the Mac awake while any T3 Code thread is running, and optionally while one waits to auto-resume.
 struct T3Integration: Integration {
     let id = IntegrationID.t3Code
-    let home: URL
+    let keepsAwakeForAutoResume: Bool
+    private let userData: URL
 
-    init(environment: [String: String] = ProcessInfo.processInfo.environment) {
-        if let custom = environment["T3CODE_HOME"], !custom.isEmpty {
-            home = URL(filePath: custom, directoryHint: .isDirectory)
+    init(keepsAwakeForAutoResume: Bool, environment: [String: String] = ProcessInfo.processInfo.environment) {
+        self.keepsAwakeForAutoResume = keepsAwakeForAutoResume
+        let home = if let custom = environment["T3CODE_HOME"], !custom.isEmpty {
+            URL(filePath: custom, directoryHint: .isDirectory)
         } else {
-            home = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".t3", directoryHint: .isDirectory)
+            FileManager.default.homeDirectoryForCurrentUser.appending(path: ".t3", directoryHint: .isDirectory)
         }
+        userData = home.appending(path: "userdata", directoryHint: .isDirectory)
     }
 
-    private static let maxConcurrentProjects = 4
+    private static let databaseName = "statev2.sqlite"
 
-    /// Only projects with thread activity in the last day, so each poll launches a handful of CLI processes
-    /// instead of one per project ever opened. T3 has no CLI command that lists projects.
-    private static let recentProjectsQuery = """
-        SELECT p.project_id AS id, p.title AS title FROM projection_projects p \
-        WHERE p.deleted_at IS NULL AND EXISTS (SELECT 1 FROM orchestration_v2_projection_threads t \
-        WHERE t.project_id = p.project_id AND t.deleted_at IS NULL AND t.archived_at IS NULL \
-        AND t.updated_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 day'))
+    /// T3 has no CLI command that reports activity across projects, so this reads its internal schema.
+    /// The run statuses are the set T3 itself indexes as unfinished. A thread hit by a usage limit carries
+    /// `limitRecovery`, which stays after the resume, so only reset times at most two minutes old count.
+    /// T3 starts the resumed run within seconds of the reset; the margin keeps the Mac awake until it does.
+    private static let activityQuery = """
+        SELECT count(DISTINCT r.thread_id) AS activeThreads, count(DISTINCT t.project_id) AS activeProjects,
+          (SELECT max(unixepoch(json_extract(w.payload_json, '$.limitRecovery.resetAt'), 'subsec'))
+            FROM orchestration_v2_projection_threads w
+            WHERE w.deleted_at IS NULL AND w.archived_at IS NULL
+            AND json_extract(w.payload_json, '$.limitRecovery.autoResume') = 1
+            AND unixepoch(json_extract(w.payload_json, '$.limitRecovery.resetAt'), 'subsec')
+              > unixepoch('now', '-2 minutes')) AS resumeAt
+        FROM orchestration_v2_projection_runs r
+        JOIN orchestration_v2_projection_threads t ON t.thread_id = r.thread_id
+        WHERE r.status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
+        AND t.deleted_at IS NULL AND t.archived_at IS NULL
         """
 
     func read() async -> IntegrationReading {
-        guard let cli = locateCLI() else {
-            return .unavailable(reason: "T3 Code CLI not found")
-        }
-        guard let projects = await recentProjects() else {
-            return .unavailable(reason: "Couldn't read T3 projects")
-        }
-        let outcomes = await withTaskGroup(of: T3ProjectOutcome.self) { group in
-            var pending = projects[...]
-            var outcomes: [T3ProjectOutcome] = []
-            for _ in 0..<Self.maxConcurrentProjects {
-                guard let project = pending.popFirst() else { break }
-                group.addTask { await Self.check(project, cli: cli) }
-            }
-            for await outcome in group {
-                outcomes.append(outcome)
-                if let project = pending.popFirst() {
-                    group.addTask { await Self.check(project, cli: cli) }
-                }
-            }
-            return outcomes
-        }
-        return T3ThreadList.reading(from: outcomes)
-    }
-
-    private func locateCLI() -> URL? {
-        let candidates = [
-            home.appending(path: "bin/t3"),
-            URL(filePath: "/opt/homebrew/bin/t3"),
-            URL(filePath: "/usr/local/bin/t3")
-        ]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path(percentEncoded: false)) }
-    }
-
-    private func recentProjects() async -> [T3Project]? {
-        let database = home.appending(path: "userdata/statev2.sqlite")
+        let database = userData.appending(path: Self.databaseName)
         do {
             let output = try await ProcessRunner.run(
                 URL(filePath: "/usr/bin/sqlite3"),
-                arguments: ["-readonly", "-json", database.path(percentEncoded: false), Self.recentProjectsQuery],
+                arguments: ["-readonly", "-json", database.path(percentEncoded: false), Self.activityQuery],
                 timeout: .seconds(10)
             )
-            return try T3ThreadList.projects(fromSQLiteJSON: output)
+            return try T3Activity.parse(sqliteJSON: output).reading(keepsAwakeForAutoResume: keepsAwakeForAutoResume)
         } catch {
-            return nil
+            return .unavailable(reason: "Couldn't read T3 Code's state")
         }
     }
 
-    private static func check(_ project: T3Project, cli: URL) async -> T3ProjectOutcome {
-        do {
-            let output = try await ProcessRunner.run(
-                cli,
-                arguments: ["thread", "list", "--project", project.id, "--json"],
-                timeout: .seconds(15)
-            )
-            return .checked(project, runningThreads: try T3ThreadList.runningCount(fromThreadListJSON: output))
-        } catch {
-            return .failed(project, reason: String(describing: error))
-        }
+    /// Every T3 state change commits to the database, landing in its write-ahead log first.
+    /// The shared-memory index is left out because Bee's own reads touch it.
+    func changes() -> AsyncStream<Void> {
+        FileWatcher.changes(
+            in: userData,
+            fileNames: [Self.databaseName, "\(Self.databaseName)-wal"],
+            latency: .seconds(1)
+        )
     }
 }

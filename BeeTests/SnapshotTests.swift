@@ -23,6 +23,15 @@ struct SnapshotTests {
     }
 
     @Test
+    func olderSnapshotWaitsForT3AutoResume() throws {
+        let defaults = try #require(UserDefaults(suiteName: "SnapshotTests.autoResume"))
+        defer { defaults.removePersistentDomain(forName: "SnapshotTests.autoResume") }
+        defaults.set(Data(savedBeforeLidSetting.utf8), forKey: "bee.snapshot.v1")
+
+        #expect(Snapshot.load(from: defaults).keepsAwakeForT3AutoResume)
+    }
+
+    @Test
     func lidSettingSurvivesSaveAndLoad() throws {
         let defaults = try #require(UserDefaults(suiteName: "SnapshotTests.roundTrip"))
         defer { defaults.removePersistentDomain(forName: "SnapshotTests.roundTrip") }

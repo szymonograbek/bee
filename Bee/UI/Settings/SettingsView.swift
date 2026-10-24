@@ -56,7 +56,7 @@ private struct GeneralSettings: View {
             Section {
                 Toggle("Launch at login", isOn: Binding(
                     get: { bee.loginItem == .enabled || bee.loginItem == .requiresApproval },
-                    set: { bee.perform(.setLaunchAtLogin($0)) }
+                    set: { bee.perform(.setOption(.launchAtLogin, $0)) }
                 ))
                 switch bee.loginItem {
                 case .requiresApproval:
@@ -76,7 +76,7 @@ private struct GeneralSettings: View {
             Section {
                 Toggle(isOn: Binding(
                     get: { bee.preventsDisplaySleep },
-                    set: { bee.perform(.setPreventsDisplaySleep($0)) }
+                    set: { bee.perform(.setOption(.preventsDisplaySleep, $0)) }
                 )) {
                     Text("Keep the display on")
                     Text("By default only the Mac stays awake, and the display can still turn off.")
@@ -85,7 +85,7 @@ private struct GeneralSettings: View {
             Section {
                 Toggle(isOn: Binding(
                     get: { bee.keepsAwakeWithLidClosed },
-                    set: { bee.perform(.setKeepsAwakeWithLidClosed($0)) }
+                    set: { bee.perform(.setOption(.keepsAwakeWithLidClosed, $0)) }
                 )) {
                     Text("Keep awake with the lid closed")
                     Text(
@@ -119,6 +119,7 @@ private struct IntegrationSettings: View {
                         Text(id.explanation)
                     }
                     if bee.isEnabled(id) {
+                        IntegrationOptions(id: id, bee: bee)
                         LabeledContent("Status") {
                             IntegrationStatus(state: bee.state.integrations[id, default: .disabled])
                         }
@@ -127,6 +128,24 @@ private struct IntegrationSettings: View {
             }
         }
         .settingsPane()
+    }
+}
+
+private struct IntegrationOptions: View {
+    let id: IntegrationID
+    let bee: BeeController
+
+    var body: some View {
+        switch id {
+        case .t3Code:
+            Toggle(isOn: Binding(
+                get: { bee.keepsAwakeForT3AutoResume },
+                set: { bee.perform(.setOption(.keepsAwakeForT3AutoResume, $0)) }
+            )) {
+                Text("Wait for auto-resume")
+                Text("Stays awake while a thread that hit a usage limit waits to resume on its own.")
+            }
+        }
     }
 }
 
@@ -163,7 +182,7 @@ private struct IntegrationStatus: View {
 private extension IntegrationID {
     var explanation: String {
         switch self {
-        case .t3Code: "Keeps your Mac awake while any T3 Code thread is running. Checked every 30 seconds."
+        case .t3Code: "Keeps your Mac awake while any T3 Code thread is running or waiting on you."
         }
     }
 }

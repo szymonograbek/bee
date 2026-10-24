@@ -9,9 +9,15 @@ enum BeeCommand: Equatable {
     case resumeAutomatic
     case setSchedule(Schedule)
     case setIntegration(IntegrationID, enabled: Bool)
-    case setPreventsDisplaySleep(Bool)
-    case setLaunchAtLogin(Bool)
-    case setKeepsAwakeWithLidClosed(Bool)
+    case setOption(BeeOption, Bool)
+}
+
+/// An on/off choice in Settings.
+enum BeeOption: Equatable {
+    case launchAtLogin
+    case preventsDisplaySleep
+    case keepsAwakeWithLidClosed
+    case keepsAwakeForT3AutoResume
 }
 
 /// Mirrors `SMAppService.mainApp.status`, which is the source of truth, so it is never persisted.
@@ -30,6 +36,7 @@ final class BeeController {
     private(set) var state: BeeState
     private(set) var activity: Activity
     private(set) var preventsDisplaySleep: Bool
+    private(set) var keepsAwakeForT3AutoResume: Bool
     private(set) var loginItem: LoginItemStatus
     private(set) var keepsAwakeWithLidClosed: Bool
 
@@ -55,6 +62,7 @@ final class BeeController {
         self.state = state
         self.activity = state.activity(at: Date(), calendar: calendar)
         self.preventsDisplaySleep = snapshot.preventsDisplaySleep
+        self.keepsAwakeForT3AutoResume = snapshot.keepsAwakeForT3AutoResume
         self.loginItem = Self.currentLoginItemStatus()
         self.keepsAwakeWithLidClosed = snapshot.keepsAwakeWithLidClosed
         self.sleepDisabler = SleepDisabler(defaults: defaults)
@@ -80,13 +88,8 @@ final class BeeController {
             send(.scheduleChanged(schedule))
         case let .setIntegration(id, enabled):
             setIntegration(id, enabled: enabled)
-        case let .setPreventsDisplaySleep(prevents):
-            preventsDisplaySleep = prevents
-            reconcile()
-        case let .setLaunchAtLogin(launches):
-            setLaunchAtLogin(launches)
-        case let .setKeepsAwakeWithLidClosed(keeps):
-            setKeepsAwakeWithLidClosed(keeps)
+        case let .setOption(option, isOn):
+            setOption(option, isOn)
         }
     }
 
@@ -113,6 +116,21 @@ final class BeeController {
         reconcile()
     }
 
+    private func setOption(_ option: BeeOption, _ isOn: Bool) {
+        switch option {
+        case .launchAtLogin:
+            setLaunchAtLogin(isOn)
+        case .preventsDisplaySleep:
+            preventsDisplaySleep = isOn
+            reconcile()
+        case .keepsAwakeWithLidClosed:
+            setKeepsAwakeWithLidClosed(isOn)
+        case .keepsAwakeForT3AutoResume:
+            keepsAwakeForT3AutoResume = isOn
+            restartPollers()
+        }
+    }
+
     private func setIntegration(_ id: IntegrationID, enabled: Bool) {
         guard enabled != isEnabled(id) else { return }
         send(.integrationChanged(id, enabled ? .checking : .disabled))
@@ -136,7 +154,8 @@ final class BeeController {
             schedule: state.schedule,
             enabledIntegrations: Set(IntegrationID.allCases.filter(isEnabled)),
             preventsDisplaySleep: preventsDisplaySleep,
-            keepsAwakeWithLidClosed: keepsAwakeWithLidClosed
+            keepsAwakeWithLidClosed: keepsAwakeWithLidClosed,
+            keepsAwakeForT3AutoResume: keepsAwakeForT3AutoResume
         )
         guard snapshot != lastSaved else { return }
         snapshot.save(to: defaults)
@@ -162,7 +181,8 @@ final class BeeController {
 
     private func observeSystemEvents() {
         let workspace = NSWorkspace.shared.notificationCenter
-        observe(NSWorkspace.didWakeNotification, on: workspace) { $0.systemDidWake() }
+        // Readings taken before sleep are stale.
+        observe(NSWorkspace.didWakeNotification, on: workspace) { $0.restartPollers() }
         observe(NSApplication.willTerminateNotification, on: .default) { $0.sleepDisabler.releaseBeforeExit() }
         let timeChanges: [Notification.Name] = [
             .NSSystemClockDidChange,
@@ -185,43 +205,6 @@ final class BeeController {
             }
         }
         observers.append(observer)
-    }
-
-    /// Readings taken before sleep are stale, so every poller starts over with an immediate read.
-    private func systemDidWake() {
-        for task in pollers.values { task.cancel() }
-        pollers.removeAll()
-        send(.tick)
-    }
-
-    // MARK: Integrations
-
-    private func reconcilePollers() {
-        for id in IntegrationID.allCases {
-            if isEnabled(id), pollers[id] == nil {
-                pollers[id] = startPoller(id)
-            } else if !isEnabled(id), let poller = pollers.removeValue(forKey: id) {
-                poller.cancel()
-            }
-        }
-    }
-
-    /// One sequential loop per integration, so reads never overlap. Cancellation also kills child processes.
-    private func startPoller(_ id: IntegrationID) -> Task<Void, Never> {
-        Task { [weak self] in
-            while !Task.isCancelled {
-                let reading = await Self.read(id)
-                guard !Task.isCancelled else { return }
-                self?.send(.integrationChanged(id, .reported(reading)))
-                try? await Task.sleep(for: .seconds(30))
-            }
-        }
-    }
-
-    nonisolated private static func read(_ id: IntegrationID) async -> IntegrationReading {
-        switch id {
-        case .t3Code: await T3Integration().read()
-        }
     }
 
     // MARK: Lid sleep
@@ -262,6 +245,56 @@ final class BeeController {
         case .requiresApproval: .requiresApproval
         case .notRegistered, .notFound: .disabled
         @unknown default: .disabled
+        }
+    }
+}
+
+// MARK: Integrations
+extension BeeController {
+    /// Every poller starts over with an immediate read.
+    private func restartPollers() {
+        for task in pollers.values { task.cancel() }
+        pollers.removeAll()
+        send(.tick)
+    }
+
+    private func reconcilePollers() {
+        for id in IntegrationID.allCases {
+            if isEnabled(id), pollers[id] == nil {
+                pollers[id] = startPoller(id)
+            } else if !isEnabled(id), let poller = pollers.removeValue(forKey: id) {
+                poller.cancel()
+            }
+        }
+    }
+
+    /// One sequential loop per integration, so reads never overlap. Triggers that arrive during a read
+    /// collapse into one follow-up read. Cancellation also kills child processes.
+    private func startPoller(_ id: IntegrationID) -> Task<Void, Never> {
+        let integration = integration(id)
+        return Task { [weak self] in
+            let triggers = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+            triggers.continuation.yield()
+            await withDiscardingTaskGroup { group in
+                group.addTask {
+                    for await _ in integration.changes() { triggers.continuation.yield() }
+                }
+                group.addTask {
+                    while (try? await Task.sleep(for: .seconds(60))) != nil { triggers.continuation.yield() }
+                }
+                for await _ in triggers.stream {
+                    let reading = await integration.read()
+                    guard !Task.isCancelled else { break }
+                    self?.send(.integrationChanged(id, .reported(reading)))
+                }
+                group.cancelAll()
+            }
+        }
+    }
+
+    private func integration(_ id: IntegrationID) -> any Integration {
+        switch id {
+        case .t3Code: T3Integration(keepsAwakeForAutoResume: keepsAwakeForT3AutoResume)
         }
     }
 }

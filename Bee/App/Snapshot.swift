@@ -7,6 +7,7 @@ struct Snapshot: Codable, Equatable {
     var enabledIntegrations: Set<IntegrationID>
     var preventsDisplaySleep: Bool
     var keepsAwakeWithLidClosed: Bool
+    var keepsAwakeForT3AutoResume: Bool
 
     private static let key = "bee.snapshot.v1"
     private static let firstLaunch = Self(
@@ -14,7 +15,8 @@ struct Snapshot: Codable, Equatable {
         schedule: .workHours,
         enabledIntegrations: [.t3Code],
         preventsDisplaySleep: false,
-        keepsAwakeWithLidClosed: false
+        keepsAwakeWithLidClosed: false,
+        keepsAwakeForT3AutoResume: true
     )
 
     /// A missing or unreadable value falls back to first-launch defaults rather than failing to start.
@@ -41,5 +43,6 @@ extension Snapshot {
         enabledIntegrations = try container.decode(Set<IntegrationID>.self, forKey: .enabledIntegrations)
         preventsDisplaySleep = try container.decode(Bool.self, forKey: .preventsDisplaySleep)
         keepsAwakeWithLidClosed = try container.decodeIfPresent(Bool.self, forKey: .keepsAwakeWithLidClosed) ?? false
+        keepsAwakeForT3AutoResume = try container.decodeIfPresent(Bool.self, forKey: .keepsAwakeForT3AutoResume) ?? true
     }
 }
