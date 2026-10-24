@@ -1,0 +1,342 @@
+#!/bin/bash
+# Drives the real Bee menu bar app through macOS Accessibility (System Events).
+# Usage: bee-verify <command> [args]. Run with no arguments for the command list.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$0")/../../../.." && pwd)"
+BUNDLE_ID="com.szymonograbek.Bee"
+VERIFY_DIR="$REPO/build/verify"
+DERIVED="$VERIFY_DIR/DerivedData"
+APP="$DERIVED/Build/Products/Debug/Bee.app"
+STATE="$VERIFY_DIR/state"
+EVIDENCE="${BEE_EVIDENCE:-$VERIFY_DIR/evidence}"
+
+die() { echo "bee-verify: $*" >&2; exit 1; }
+
+our_pid() {
+    [[ -f "$STATE/pid" ]] || return 1
+    local pid
+    pid="$(cat "$STATE/pid")"
+    kill -0 "$pid" 2>/dev/null || return 1
+    echo "$pid"
+}
+
+bee_pids() { pgrep -f "/Bee.app/Contents/MacOS/Bee$" || true; }
+
+ax() { osascript - "$@"; }
+
+cmd_launch() {
+    local fresh=false
+    [[ "${1:-}" == "--fresh" ]] && fresh=true
+    our_pid >/dev/null && die "already launched (pid $(our_pid)); run cleanup first"
+    mkdir -p "$STATE" "$EVIDENCE"
+
+    (cd "$REPO" && xcodegen generate --quiet)
+    xcodebuild -project "$REPO/Bee.xcodeproj" -scheme Bee -configuration Debug \
+        -derivedDataPath "$DERIVED" build > "$STATE/build.log" 2>&1 \
+        || { tail -n 30 "$STATE/build.log"; die "build failed, full log in $STATE/build.log"; }
+
+    # Bee instances share one defaults domain and one menu bar, so a running copy
+    # is quit now and relaunched by cleanup instead of being driven alongside ours.
+    local prior
+    prior="$(bee_pids | head -n 1)"
+    if [[ -n "$prior" ]]; then
+        ps -o command= -p "$prior" | sed 's#/Contents/MacOS/Bee$##' > "$STATE/prior-instance"
+        echo "Quitting the already running Bee (pid $prior); cleanup relaunches it."
+        kill "$prior"
+        for _ in $(seq 50); do kill -0 "$prior" 2>/dev/null || break; sleep 0.1; done
+    fi
+
+    if defaults export "$BUNDLE_ID" "$STATE/defaults-backup.plist" 2>/dev/null; then :; else
+        rm -f "$STATE/defaults-backup.plist"
+    fi
+    $fresh && defaults delete "$BUNDLE_ID" 2>/dev/null || true
+
+    open -n "$APP"
+    local pid=""
+    for _ in $(seq 100); do
+        pid="$(pgrep -f "^$APP/Contents/MacOS/Bee$" || true)"
+        [[ -n "$pid" ]] && break
+        sleep 0.1
+    done
+    [[ -n "$pid" ]] || die "Bee did not start"
+    echo "$pid" > "$STATE/pid"
+
+    for _ in $(seq 100); do
+        [[ -n "$(status_label 2>/dev/null)" ]] && break
+        sleep 0.1
+    done
+    [[ -n "$(status_label 2>/dev/null)" ]] || die "Bee started (pid $pid) but its menu bar item never appeared"
+
+    # Usable means every enabled integration has reported once; before that the
+    # icon and menu can flip mid-read.
+    for _ in $(seq 60); do
+        local items
+        if items="$(cmd_menu_items 2>/dev/null)" && [[ -n "$items" ]] && ! grep -q "Checking…" <<<"$items"; then
+            echo "ready: pid $pid, status item says \"$(status_label)\""
+            return 0
+        fi
+        sleep 0.5
+    done
+    die "an integration is still \"Checking…\" after 30 s; run bee-verify state to see which"
+}
+
+status_label() {
+    ax <<'EOF'
+tell application "System Events" to tell process "Bee" to return name of menu bar item 1 of menu bar 2
+EOF
+}
+
+cmd_doctor() {
+    local ok=true pid
+    if pid="$(our_pid)"; then echo "ok   process: pid $pid"; else echo "FAIL process: no Bee launched by bee-verify"; ok=false; fi
+    local count
+    count="$(bee_pids | wc -l | tr -d ' ')"
+    if [[ "$count" == "1" ]]; then echo "ok   instances: 1"; else echo "FAIL instances: $count Bee processes"; ok=false; fi
+    if [[ -n "${pid:-}" ]]; then
+        local exe
+        exe="$(ps -o command= -p "$pid")"
+        if [[ "$exe" == "$APP/Contents/MacOS/Bee" ]]; then echo "ok   build: $APP"; else echo "FAIL build: running $exe"; ok=false; fi
+        local src
+        src="$(find "$REPO/Bee" -name '*.swift' -newer "$APP/Contents/MacOS/Bee" | head -n 1)"
+        if [[ -z "$src" ]]; then echo "ok   fresh: binary newer than every Bee/*.swift"; else echo "FAIL fresh: $src changed after the build (relaunch)"; ok=false; fi
+    fi
+    local label
+    if label="$(status_label 2>&1)"; then echo "ok   accessibility: status item \"$label\""; else echo "FAIL accessibility: $label"; ok=false; fi
+    $ok
+}
+
+cmd_menu() {
+    [[ $# -ge 1 ]] || die "usage: menu <item> [submenu item]"
+    our_pid >/dev/null || die "launch first"
+    ax "$@" <<'EOF'
+on run argv
+    tell application "System Events" to tell process "Bee"
+        set statusItem to menu bar item 1 of menu bar 2
+        click statusItem
+        delay 0.3
+        set target to menu item (item 1 of argv) of menu 1 of statusItem
+        if (count of argv) > 1 then
+            click target
+            delay 0.3
+            set target to menu item (item 2 of argv) of menu 1 of target
+        end if
+        click target
+    end tell
+    return
+end run
+EOF
+    sleep 0.5
+}
+
+cmd_menu_items() {
+    our_pid >/dev/null || die "launch first"
+    ax <<'EOF'
+tell application "System Events" to tell process "Bee"
+    set statusItem to menu bar item 1 of menu bar 2
+    click statusItem
+    delay 0.3
+    set out to ""
+    repeat with i in menu items of menu 1 of statusItem
+        set n to name of i
+        if n is missing value then
+            set out to out & "---" & linefeed
+        else if enabled of i then
+            set out to out & "[item] " & n & linefeed
+        else
+            set out to out & "[text] " & n & linefeed
+        end if
+    end repeat
+    key code 53
+    return out
+end tell
+EOF
+}
+
+cmd_settings() {
+    local tab="${1:-General}"
+    our_pid >/dev/null || die "launch first"
+    ax "$tab" <<'EOF'
+on run argv
+    tell application "System Events" to tell process "Bee"
+        if not (exists window "Bee Settings") then
+            set statusItem to menu bar item 1 of menu bar 2
+            click statusItem
+            delay 0.3
+            click menu item "Settings…" of menu 1 of statusItem
+            delay 1
+        end if
+        set w to window "Bee Settings"
+        click (first radio button of tab group 1 of group 1 of toolbar 1 of w whose description is (item 1 of argv))
+        delay 0.5
+    end tell
+end run
+EOF
+    cmd_ax_dump
+}
+
+cmd_ax_dump() {
+    ax <<'EOF'
+tell application "System Events" to tell process "Bee"
+    set w to window "Bee Settings"
+    set out to ""
+    set els to entire contents of w
+    repeat with e in els
+        set r to ""
+        set d to ""
+        set n to ""
+        set v to ""
+        try
+            set r to role of e
+        end try
+        try
+            set d to description of e
+        end try
+        try
+            set n to name of e as text
+        end try
+        try
+            set v to value of e as text
+        end try
+        if r is in {"AXCheckBox", "AXStaticText", "AXButton", "AXPopUpButton", "AXTextField", "AXDateTimeArea"} then
+            if d is not in {"close button", "zoom button", "minimize button"} then
+                set out to out & r & " | " & n & " | " & v & linefeed
+            end if
+        end if
+    end repeat
+    return out
+end tell
+EOF
+}
+
+cmd_toggle() {
+    [[ $# -eq 1 ]] || die "usage: toggle <switch label>"
+    ax "$1" <<'EOF'
+on run argv
+    tell application "System Events" to tell process "Bee"
+        set w to window "Bee Settings"
+        set els to entire contents of w
+        repeat with e in els
+            try
+                if role of e is "AXCheckBox" and name of e is (item 1 of argv) then
+                    click e
+                    delay 0.5
+                    return (item 1 of argv) & " = " & (value of e as text)
+                end if
+            end try
+        end repeat
+        error "no switch labelled " & (item 1 of argv)
+    end tell
+end run
+EOF
+}
+
+cmd_close_settings() {
+    ax <<'EOF'
+tell application "System Events" to tell process "Bee"
+    if exists window "Bee Settings" then click (first button of window "Bee Settings" whose description is "close button")
+end tell
+return
+EOF
+}
+
+cmd_state() {
+    local pid
+    pid="$(our_pid)" || die "launch first"
+    echo "status item: $(status_label)"
+    echo "menu:"
+    cmd_menu_items | sed 's/^/  /'
+    echo "power assertions held by pid $pid:"
+    pmset -g assertions | grep "pid $pid(Bee)" | sed -E 's/^ +/  /' || echo "  (none)"
+    echo "saved snapshot:"
+    defaults export "$BUNDLE_ID" - | /usr/bin/python3 -I -c '
+import json, plistlib, sys
+prefs = plistlib.loads(sys.stdin.buffer.read())
+data = prefs.get("bee.snapshot.v1")
+print("  (none)" if data is None else json.dumps(json.loads(data), sort_keys=True))'
+}
+
+cmd_screenshot() {
+    [[ $# -eq 1 ]] || die "usage: screenshot <name>"
+    mkdir -p "$EVIDENCE"
+    local frame
+    frame="$(ax <<'EOF'
+tell application "System Events" to tell process "Bee"
+    set {x, y} to position of menu bar item 1 of menu bar 2
+    set {w, h} to size of menu bar item 1 of menu bar 2
+    return (x as text) & "," & (y as text) & "," & (w as text) & "," & (h as text)
+end tell
+EOF
+)"
+    screencapture -x -R"$frame" "$EVIDENCE/$1-menubar.png"
+    echo "$EVIDENCE/$1-menubar.png"
+    local window_id
+    window_id="$(ax <<'EOF' 2>/dev/null || true
+tell application "System Events" to tell process "Bee"
+    if exists window "Bee Settings" then
+        set frontmost to true
+        perform action "AXRaise" of window "Bee Settings"
+        delay 0.5
+        set {x, y} to position of window "Bee Settings"
+        set {w, h} to size of window "Bee Settings"
+        return (x as text) & "," & (y as text) & "," & (w as text) & "," & (h as text)
+    end if
+end tell
+EOF
+)"
+    if [[ -n "$window_id" ]]; then
+        screencapture -x -R"$window_id" "$EVIDENCE/$1-settings.png"
+        echo "$EVIDENCE/$1-settings.png"
+    fi
+}
+
+cmd_cleanup() {
+    local pid
+    if pid="$(our_pid)"; then
+        kill "$pid"
+        for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+        kill -0 "$pid" 2>/dev/null && kill -9 "$pid"
+        echo "stopped pid $pid"
+    fi
+    rm -f "$STATE/pid"
+    if [[ -f "$STATE/defaults-backup.plist" ]]; then
+        defaults delete "$BUNDLE_ID" 2>/dev/null || true
+        defaults import "$BUNDLE_ID" "$STATE/defaults-backup.plist"
+        rm -f "$STATE/defaults-backup.plist"
+        echo "restored the user's Bee settings"
+    fi
+    if [[ -f "$STATE/prior-instance" ]]; then
+        open "$(cat "$STATE/prior-instance")"
+        echo "relaunched $(cat "$STATE/prior-instance")"
+        rm -f "$STATE/prior-instance"
+    fi
+    echo "evidence kept in $EVIDENCE"
+}
+
+case "${1:-}" in
+    launch) shift; cmd_launch "$@" ;;
+    doctor) cmd_doctor ;;
+    menu) shift; cmd_menu "$@" ;;
+    menu-items) cmd_menu_items ;;
+    settings) shift; cmd_settings "$@" ;;
+    ax-dump) cmd_ax_dump ;;
+    toggle) shift; cmd_toggle "$@" ;;
+    close-settings) cmd_close_settings ;;
+    state) cmd_state ;;
+    screenshot) shift; cmd_screenshot "$@" ;;
+    cleanup) cmd_cleanup ;;
+    *)
+        cat <<'USAGE'
+bee-verify launch [--fresh]        build into build/verify, quit any running Bee, launch ours, wait for its menu bar item
+bee-verify doctor                  is this instance worth driving?
+bee-verify state                   status item label, menu, power assertions, saved snapshot
+bee-verify menu-items              list the open menu's items ([item] clickable, [text] status line)
+bee-verify menu <item> [subitem]   click a menu path, e.g. menu "Keep Awake" "15 Minutes"
+bee-verify settings [tab]          open Settings on General|Schedule|Integrations and dump its controls
+bee-verify toggle <label>          click the switch with that label in Settings, print its new value
+bee-verify close-settings          close the Settings window
+bee-verify screenshot <name>       capture the menu bar item (and Settings if open) into the evidence dir
+bee-verify cleanup                 stop our Bee, restore the user's settings, relaunch their Bee
+USAGE
+        exit 2 ;;
+esac
