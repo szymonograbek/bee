@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/szymonograbek/bee/compare/v1.1.1...v1.2.0) (2026-10-24)
+
+
+### Features
+
+* give the menu bar bee distinct awake and idle looks ([8afe4ea](https://github.com/szymonograbek/bee/commit/8afe4eae84c2a72ae9b939c7660b3ecfa3dcef0f))
+* give the menu bar bee distinct awake and idle looks ([2eec713](https://github.com/szymonograbek/bee/commit/2eec71372b628133b99dc362062c8035e711abdc))
+
 ## [1.1.1](https://github.com/szymonograbek/bee/compare/v1.1.0...v1.1.1) (2026-10-24)
 
 
