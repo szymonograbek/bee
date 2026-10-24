@@ -57,7 +57,7 @@ Proof standards:
 - Capture before and after: `bee-verify state` before the action and after it. Save both with `bee-verify state > "$BEE_EVIDENCE/<feature>-before.txt"`.
 - The side effect is the power assertion. A UI label saying "Awake" is not proof without the `pmset` line under `power assertions held by pid`. An idle claim needs `(none)` there.
 - Persistence is proven by the `saved snapshot` line, which reads the stored value back, not by the UI.
-- A screenshot of the menu bar icon shows the solid bee (awake) or outlined bee (idle).
+- A screenshot of the menu bar icon shows the solid bee with lightning-bolt eyes (awake) or the outlined sleeping bee with closed eyes and z's (idle).
 
 ## Cleanup
 
