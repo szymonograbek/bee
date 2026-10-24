@@ -31,4 +31,5 @@ Each feature file starts with an H1 title and one paragraph of user-visible beha
 - [Pause](./pause.md) covers pausing for an hour, today, or this week, and resuming.
 - [T3 Code integration](./t3-integration.md) covers staying awake while a T3 thread runs and switching the integration off.
 - [Display sleep](./display-sleep.md) covers the option to keep the screen on too.
+- [Lid closed](./lid-closed.md) covers staying awake with the MacBook lid closed through `pmset disablesleep`.
 - [Schedule](./schedule.md) covers the weekly schedule editor and its effect.

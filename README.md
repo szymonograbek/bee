@@ -11,6 +11,12 @@ Bee is a macOS menu bar app that keeps your Mac awake. It works like Amphetamine
 
 A pause beats a manual keep-awake, which beats the schedule, which beats integrations. By default only the Mac stays awake, so the display can still sleep. Settings can keep the display on too.
 
+## Lid closed
+
+Power assertions don't stop a MacBook from sleeping when its lid closes. Turn on **Keep awake with the lid closed** in Settings, and while Bee keeps the Mac awake it also runs `pmset -a disablesleep 1`, then `0` once it stops or quits. Bee only turns off a setting it turned on, so it leaves another app's `disablesleep` alone.
+
+`pmset` needs root. The first time you turn the setting on, Bee asks for your password once and installs `/etc/sudoers.d/bee`, which lets your account run only `/usr/bin/pmset -a disablesleep 1` and `/usr/bin/pmset -a disablesleep 0` without a password. If another app (Amphetamine, for example) already allows those commands, Bee uses that and doesn't ask. `brew uninstall` removes the file.
+
 ## Install
 
 ```sh
