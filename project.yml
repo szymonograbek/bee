@@ -1,0 +1,67 @@
+name: Bee
+options:
+  bundleIdPrefix: com.szymonograbek
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    GCC_TREAT_WARNINGS_AS_ERRORS: YES
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+targets:
+  Bee:
+    type: application
+    platform: macOS
+    sources:
+      - Bee
+    info:
+      path: Bee/Info.plist
+      properties:
+        CFBundleDisplayName: Bee
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.utilities
+        NSHumanReadableCopyright: "© 2026 Szymon Ograbek"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.szymonograbek.Bee
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    postCompileScripts:
+      - name: SwiftLint
+        basedOnDependencyAnalysis: false
+        script: |
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+          if command -v swiftlint >/dev/null 2>&1; then
+            swiftlint lint --strict --quiet --config "${SRCROOT}/.swiftlint.yml" "${SRCROOT}"
+          else
+            echo "warning: SwiftLint not installed (brew install swiftlint)"
+          fi
+  # Hostless tests: compiles the pure domain sources directly, so running
+  # tests never launches the menu bar app or touches power assertions.
+  BeeTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - BeeTests
+      - Bee/Domain
+      - path: Bee/Integrations/T3/T3ThreadList.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.szymonograbek.BeeTests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Bee:
+    build:
+      targets:
+        Bee: all
+        BeeTests: [test]
+    test:
+      targets:
+        - BeeTests

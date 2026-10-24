@@ -1,0 +1,6 @@
+.DS_Store
+Bee.xcodeproj/
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
