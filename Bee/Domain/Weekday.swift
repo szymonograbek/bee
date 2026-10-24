@@ -17,6 +17,11 @@ enum Weekday: Int, Codable, CaseIterable, Comparable, Sendable {
         self.init(rawValue: calendar.component(.weekday, from: date))
     }
 
+    /// The day before, wrapping from Sunday back to Saturday.
+    var previous: Self {
+        Self.allCases[(rawValue + 5) % 7]
+    }
+
     /// All weekdays ordered as `calendar` presents a week (e.g. Monday first in most of Europe).
     static func ordered(for calendar: Calendar) -> [Self] {
         let all = allCases.sorted()

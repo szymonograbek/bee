@@ -53,6 +53,22 @@ struct ScheduleRule: Codable, Equatable, Identifiable, Sendable {
 
     var endsNextDay: Bool { end <= start }
 
+    /// The minutes of `day` this rule covers. An overnight window is split: the evening on its own weekday,
+    /// the early hours on the next one.
+    func minuteRanges(on day: Weekday) -> [Range<Int>] {
+        guard endsNextDay else {
+            return weekdays.contains(day) ? [start.minutesSinceMidnight..<end.minutesSinceMidnight] : []
+        }
+        var ranges: [Range<Int>] = []
+        if weekdays.contains(day.previous), end.minutesSinceMidnight > 0 {
+            ranges.append(0..<end.minutesSinceMidnight)
+        }
+        if weekdays.contains(day) {
+            ranges.append(start.minutesSinceMidnight..<TimeOfDay.minutesPerDay)
+        }
+        return ranges
+    }
+
     func occurrence(onDayStarting day: Date, calendar: Calendar) -> DateInterval? {
         guard
             let weekday = Weekday(of: day, in: calendar),

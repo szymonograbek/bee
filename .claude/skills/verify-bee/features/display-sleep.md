@@ -9,7 +9,7 @@ By default Bee only keeps the Mac awake and lets the display turn off. A Setting
 
 ## How to get to it (user POV)
 
-- Settings → General → `Also prevent display sleep`.
+- Settings → General → `Keep the display on`.
 
 ## Driving it with bee-verify
 
@@ -17,8 +17,8 @@ Preconditions:
 
 - Bee is awake for any reason (T3 thread, schedule, or `bee-verify menu "Keep Awake" "1 Hour"`).
 
-- **Open.** Run `bee-verify settings General`. The dump shows `AXCheckBox | Also prevent display sleep | 0`.
-- **On.** Run `bee-verify toggle "Also prevent display sleep"` (`= 1`), then `bee-verify state`. The assertion line for our pid reads `PreventUserIdleDisplaySleep`, and the snapshot has `"preventsDisplaySleep": true`.
+- **Open.** Run `bee-verify settings General`. The dump shows `AXCheckBox | Keep the display on | 0`.
+- **On.** Run `bee-verify toggle "Keep the display on"` (`= 1`), then `bee-verify state`. The assertion line for our pid reads `PreventUserIdleDisplaySleep`, and the snapshot has `"preventsDisplaySleep": true`.
 - **Off.** Run the toggle again (`= 0`). The assertion reads `PreventUserIdleSystemSleep` and the snapshot has `false`.
 
 ## Gotchas

@@ -2,57 +2,96 @@ import SwiftUI
 
 struct MenuContent: View {
     let bee: BeeController
-    @Environment(\.openWindow)
-    private var openWindow
+    @Environment(\.openSettings)
+    private var openSettings
 
     var body: some View {
-        Text(bee.activity.headline(now: .now, calendar: .autoupdatingCurrent))
-        Divider()
-        Menu("Keep Awake") {
-            ForEach(KeepAwakeDuration.allCases, id: \.self) { duration in
+        let status = bee.activity.status(now: .now, calendar: .autoupdatingCurrent)
+        Section {
+            Text(status.headline)
+            Text(status.detail)
+        }
+        Menu {
+            ForEach(KeepAwakeDuration.timed, id: \.self) { duration in
                 Button(duration.title) { bee.perform(.keepAwake(duration)) }
             }
+            Divider()
+            Button(KeepAwakeDuration.indefinitely.title) { bee.perform(.keepAwake(.indefinitely)) }
+        } label: {
+            Label("Keep Awake", systemImage: "cup.and.heat.waves")
         }
-        Menu("Pause") {
+        Menu {
             ForEach(PauseLength.allCases, id: \.self) { length in
                 Button(length.title) { bee.perform(.pause(length)) }
             }
+        } label: {
+            Label("Pause", systemImage: "moon.zzz")
         }
-        if let title = bee.state.mode.resumeTitle {
-            Button(title) { bee.perform(.resumeAutomatic) }
+        if let resume = bee.state.mode.resumeAction {
+            Button { bee.perform(.resumeAutomatic) } label: {
+                Label(resume.title, systemImage: resume.systemImage)
+            }
         }
-        ForEach(IntegrationID.allCases.filter(bee.isEnabled), id: \.self) { id in
-            Text("\(id.displayName): \(bee.state.integrations[id, default: .disabled].statusText)")
+        // The integration keeping the Mac awake is already explained by the status above.
+        let integrations = IntegrationID.allCases.filter { bee.isEnabled($0) && bee.activity.awakeIntegration != $0 }
+        if !integrations.isEmpty {
+            Section {
+                ForEach(integrations, id: \.self) { id in
+                    Text("\(id.displayName): \(bee.state.integrations[id, default: .disabled].statusText)")
+                }
+            }
         }
-        Divider()
-        Button("Settings…") {
-            openWindow(id: "settings")
-            NSApp.activate()
-        }
-        .keyboardShortcut(",")
-        Button("Quit Bee") { NSApp.terminate(nil) }
+        Section {
+            Button {
+                // A menu bar app is never active on its own, so the window would open behind other apps.
+                NSApp.activate()
+                openSettings()
+            } label: {
+                Label("Settings…", systemImage: "gearshape")
+            }
+            .keyboardShortcut(",")
+            Button {
+                NSApp.terminate(nil)
+            } label: {
+                Label("Quit Bee", systemImage: "power")
+            }
             .keyboardShortcut("q")
+        }
     }
 }
 
+/// What the top of the menu says: the state with its end time, then why.
+struct ActivityStatus: Equatable {
+    let headline: String
+    let detail: String
+}
+
 extension Activity {
-    func headline(now: Date, calendar: Calendar) -> String {
-        switch self {
+    func status(now: Date, calendar: Calendar) -> ActivityStatus {
+        func moment(_ date: Date) -> String { date.moment(relativeTo: now, calendar: calendar) }
+        return switch self {
         case .awake(.manual(.never)):
-            "Awake until you turn it off"
+            ActivityStatus(headline: "Awake until you turn it off", detail: "Kept awake from this menu")
         case let .awake(.manual(.at(end))):
-            "Awake until \(end.moment(relativeTo: now, calendar: calendar))"
+            ActivityStatus(headline: "Awake until \(moment(end))", detail: "Kept awake from this menu")
         case let .awake(.schedule(until)):
-            "Awake until \(until.moment(relativeTo: now, calendar: calendar)) (schedule)"
+            ActivityStatus(headline: "Awake until \(moment(until))", detail: "Following your schedule")
         case let .awake(.integration(id, summary)):
-            "Awake: \(id.displayName), \(summary)"
+            ActivityStatus(headline: "Awake while \(id.displayName) works", detail: summary)
         case let .idle(.paused(until)):
-            "Paused until \(until.moment(relativeTo: now, calendar: calendar))"
+            ActivityStatus(headline: "Paused until \(moment(until))", detail: "Schedule and integrations are on hold")
         case let .idle(.nothingActive(nextScheduledStart?)):
-            "Idle · next \(nextScheduledStart.moment(relativeTo: now, calendar: calendar))"
+            ActivityStatus(headline: "Idle", detail: "Schedule starts \(moment(nextScheduledStart))")
         case .idle(.nothingActive(nil)):
-            "Idle"
+            ActivityStatus(headline: "Idle", detail: "Your Mac sleeps as usual")
         }
+    }
+}
+
+private extension Activity {
+    var awakeIntegration: IntegrationID? {
+        guard case let .awake(.integration(id, _)) = self else { return nil }
+        return id
     }
 }
 
@@ -68,18 +107,26 @@ extension IntegrationState {
     }
 }
 
+/// The menu item that hands control back to the schedule and integrations.
+struct ResumeAction {
+    let title: String
+    let systemImage: String
+}
+
 extension Mode {
     /// nil when there is nothing to resume from.
-    var resumeTitle: String? {
+    var resumeAction: ResumeAction? {
         switch self {
         case .automatic: nil
-        case .keepAwake: "Stop Keeping Awake"
-        case .paused: "Resume Schedule"
+        case .keepAwake: ResumeAction(title: "Stop Keeping Awake", systemImage: "stop.circle")
+        case .paused: ResumeAction(title: "Resume", systemImage: "play.circle")
         }
     }
 }
 
 extension KeepAwakeDuration {
+    static let timed = allCases.filter { $0 != .indefinitely }
+
     var title: String {
         switch self {
         case .minutes15: "15 Minutes"

@@ -84,4 +84,19 @@ struct TimeOfDayTests {
         #expect(TimeOfDay(minutesSinceMidnight: 25 * 60) == (try time(1)))
         #expect(TimeOfDay(minutesSinceMidnight: -60) == (try time(23)))
     }
+
+    @Test
+    func minuteRangesCoverTheRuleOnItsWeekdays() throws {
+        let rule = ScheduleRule.workHours
+        #expect(rule.minuteRanges(on: .monday) == [480..<960])
+        #expect(rule.minuteRanges(on: .saturday).isEmpty)
+    }
+
+    @Test
+    func overnightMinuteRangesSplitAcrossMidnight() throws {
+        let rule = ScheduleRule(id: UUID(), weekdays: [.saturday], start: try time(22), end: try time(6))
+        #expect(rule.minuteRanges(on: .saturday) == [1320..<1440])
+        #expect(rule.minuteRanges(on: .sunday) == [0..<360])
+        #expect(rule.minuteRanges(on: .monday).isEmpty)
+    }
 }
