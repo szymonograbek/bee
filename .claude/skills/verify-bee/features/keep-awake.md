@@ -22,7 +22,7 @@ Preconditions:
 - **Before.** Run `bee-verify state`. The status item reads `Bee is idle` and assertions show `(none)`.
 - **Timed.** Run `bee-verify menu "Keep Awake" "15 Minutes"`, then `bee-verify state`. The headline reads `Awake until <time 15 minutes from now>`, the status item reads `Bee is keeping your Mac awake`, a `PreventUserIdleSystemSleep` line exists for our pid, and the snapshot `mode` is `{"keepAwake": {"_0": {"at": {"_0": <timestamp>}}}}` with a timestamp about 900 s ahead.
 - **Stop.** Run `bee-verify menu "Stop Keeping Awake"`, then `bee-verify state`. Back to `Bee is idle`, assertions `(none)`, snapshot `mode` is `{"automatic": {}}`.
-- **Indefinite.** Run `bee-verify menu "Keep Awake" "Indefinitely"`. The headline reads `Awake until you turn it off` and the snapshot keeps the `never` expiry. Stop it again afterwards.
+- **Indefinite.** Run `bee-verify menu "Keep Awake" "Indefinitely"`. The headline reads `Awake until you turn it off` over `Kept awake from this menu` and the snapshot keeps the `never` expiry. Stop it again afterwards.
 - **Proof.** `bee-verify screenshot keep-awake` while awake shows the solid bee.
 
 ## Gotchas

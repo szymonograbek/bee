@@ -7,16 +7,14 @@ struct BeeApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuContent(bee: bee)
+                .labelStyle(.titleAndIcon)
         } label: {
             Image(nsImage: BeeGlyph.menuBarImage(awake: bee.activity.isAwake))
         }
         .menuBarExtraStyle(.menu)
 
-        // A plain Window: the Settings scene does not open reliably from an LSUIElement app.
-        Window("Bee Settings", id: "settings") {
+        Settings {
             SettingsView(bee: bee)
         }
-        .windowResizability(.contentSize)
-        .defaultLaunchBehavior(.suppressed)
     }
 }
