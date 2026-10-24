@@ -99,8 +99,57 @@ private struct GeneralSettings: View {
                         .foregroundStyle(.red)
                 }
             }
+            if bee.state.power.batteryCharge != nil {
+                BatterySettings(bee: bee)
+            }
         }
         .settingsPane()
+    }
+}
+
+private struct BatterySettings: View {
+    let bee: BeeController
+
+    var body: some View {
+        let limit = bee.state.batteryLimit
+        Section {
+            Toggle(isOn: binding(\.isEnabled)) {
+                Text("Stop on low battery")
+                Text(
+                    "Lets your Mac sleep when the battery drops below the limit, "
+                        + "even if you asked Bee to keep it awake."
+                )
+            }
+            if limit.isEnabled {
+                LabeledContent("Limit") {
+                    HStack {
+                        Slider(
+                            value: Binding(
+                                get: { Double(limit.minimumCharge) },
+                                set: { update(\.minimumCharge, Int($0)) }
+                            ),
+                            in: 5...95,
+                            step: 5
+                        )
+                        Text("\(limit.minimumCharge)%")
+                            .monospacedDigit()
+                            .frame(width: 36, alignment: .trailing)
+                    }
+                    .frame(width: 220)
+                }
+                Toggle("Ignore while plugged in", isOn: binding(\.ignoresWhilePluggedIn))
+            }
+        }
+    }
+
+    private func binding(_ keyPath: WritableKeyPath<BatteryLimit, Bool>) -> Binding<Bool> {
+        Binding(get: { bee.state.batteryLimit[keyPath: keyPath] }, set: { update(keyPath, $0) })
+    }
+
+    private func update<Value>(_ keyPath: WritableKeyPath<BatteryLimit, Value>, _ value: Value) {
+        var limit = bee.state.batteryLimit
+        limit[keyPath: keyPath] = value
+        bee.perform(.setBatteryLimit(limit))
     }
 }
 

@@ -4,9 +4,71 @@ import Testing
 struct BeeMachineTests {
     private func state(
         mode: Mode = .automatic,
-        t3: IntegrationState = .reported(.idle)
+        t3: IntegrationState = .reported(.idle),
+        batteryLimit: BatteryLimit = .off,
+        power: PowerSource = PowerSource(isPluggedIn: true, batteryCharge: 100)
     ) -> BeeState {
-        BeeState(mode: mode, schedule: .workHours, integrations: [.t3Code: t3])
+        BeeState(
+            mode: mode,
+            schedule: .workHours,
+            integrations: [.t3Code: t3],
+            batteryLimit: batteryLimit,
+            power: power
+        )
+    }
+
+    // MARK: Battery limit
+
+    private let limit20 = BatteryLimit(isEnabled: true, minimumCharge: 20, ignoresWhilePluggedIn: true)
+
+    @Test
+    func lowBatteryBeatsManualKeepAwake() throws {
+        let low = state(
+            mode: .keepAwake(.never),
+            batteryLimit: limit20,
+            power: PowerSource(isPluggedIn: false, batteryCharge: 19)
+        )
+        #expect(
+            low.activity(at: try date(10, 26, 10), calendar: testCalendar) == .idle(.lowBattery(charge: 19, limit: 20))
+        )
+    }
+
+    @Test
+    func pauseBeatsLowBattery() throws {
+        let until = try date(10, 26, 12)
+        let low = state(
+            mode: .paused(until: until),
+            batteryLimit: limit20,
+            power: PowerSource(isPluggedIn: false, batteryCharge: 5)
+        )
+        #expect(low.activity(at: try date(10, 26, 10), calendar: testCalendar) == .idle(.paused(until: until)))
+    }
+
+    @Test(arguments: [
+        PowerSource(isPluggedIn: false, batteryCharge: 20),
+        PowerSource(isPluggedIn: true, batteryCharge: 5),
+        PowerSource(isPluggedIn: false, batteryCharge: nil)
+    ])
+    func batteryLimitAllowsKeepingAwake(power: PowerSource) throws {
+        let bee = state(mode: .keepAwake(.never), batteryLimit: limit20, power: power)
+        #expect(bee.activity(at: try date(10, 26, 10), calendar: testCalendar) == .awake(.manual(.never)))
+    }
+
+    @Test
+    func batteryLimitCanApplyWhilePluggedIn() throws {
+        var limit = limit20
+        limit.ignoresWhilePluggedIn = false
+        let charging = PowerSource(isPluggedIn: true, batteryCharge: 5)
+        let bee = state(mode: .keepAwake(.never), batteryLimit: limit, power: charging)
+        #expect(
+            bee.activity(at: try date(10, 26, 10), calendar: testCalendar) == .idle(.lowBattery(charge: 5, limit: 20))
+        )
+    }
+
+    @Test
+    func disabledBatteryLimitNeverApplies() throws {
+        let bee = state(mode: .keepAwake(.never), power: PowerSource(isPluggedIn: false, batteryCharge: 1))
+        #expect(bee.activity(at: try date(10, 26, 10), calendar: testCalendar).isAwake)
     }
 
     // MARK: Precedence: pause > manual > schedule > integration
@@ -104,7 +166,8 @@ struct BeeMachineTests {
 
     @Test
     func nextTransitionIsNilWithNothingScheduled() throws {
-        let bee = BeeState(mode: .automatic, schedule: Schedule(isEnabled: false, rules: []), integrations: [:])
+        var bee = state()
+        bee.schedule = Schedule(isEnabled: false, rules: [])
         #expect(bee.nextTransition(after: try date(10, 26, 10), calendar: testCalendar) == nil)
     }
 
