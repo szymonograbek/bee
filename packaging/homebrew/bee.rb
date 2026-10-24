@@ -9,7 +9,7 @@ cask "bee" do
   desc "Menu bar app that keeps your Mac awake"
   homepage "https://github.com/szymonograbek/bee"
 
-  depends_on macos: ">= :sequoia"
+  depends_on macos: :sequoia
 
   app "Bee.app"
 
