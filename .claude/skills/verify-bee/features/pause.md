@@ -22,7 +22,7 @@ Preconditions:
 
 - **Before.** Run `bee-verify state > build/verify/evidence/pause-before.txt`. The status item reads `Bee is keeping your Mac awake` and a `PreventUserIdleSystemSleep` line exists for our pid.
 - **Pause today.** Run `bee-verify menu "Pause" "Rest of Today"`, then `bee-verify state > build/verify/evidence/pause-after.txt`. The headline reads `Paused until tomorrow`, the status item reads `Bee is idle`, assertions show `(none)`, the menu gains `Resume`, and the snapshot `mode` is `{"paused": {"until": <timestamp of next local midnight>}}`.
-- **Proof.** Run `bee-verify screenshot paused`. The menu bar capture shows the outlined bee.
+- **Proof.** Run `bee-verify screenshot paused`. The menu bar capture shows the outlined sleeping bee with z's.
 - **Resume.** Run `bee-verify menu "Resume"`, then `bee-verify state`. The pre-pause awake state returns with a new assertion line, and the snapshot `mode` is `{"automatic": {}}`.
 - **Other lengths.** Repeat with `"1 Hour"` (headline `Paused until <time an hour from now>`) and `"Rest of This Week"` (headline names the first day of next week), resuming after each.
 

@@ -1,14 +1,27 @@
 import AppKit
 
-/// The menu bar icon: a bee seen from above, drawn in code so it stays crisp at any scale.
+/// The menu bar icon: the app icon's round cartoon bee, facing left, drawn in code so it stays crisp at any scale.
 enum BeeGlyph {
-    private static let size = NSSize(width: 18, height: 18)
+    /// Both states share one size so the menu bar item never changes width.
+    private static let size = NSSize(width: 22, height: 18)
 
     /// A template image, so the menu bar tints it for light, dark, and highlighted states.
-    /// Awake draws a solid body; idle draws it in outline.
+    /// Awake draws the bee in flight with lightning bolts for eyes; idle draws it asleep under a trail of z's.
     static func menuBarImage(awake: Bool) -> NSImage {
         let image = NSImage(size: size, flipped: false) { _ in
-            draw(awake: awake)
+            NSColor.black.set()
+            if awake {
+                withTransform(translateX: 10.8, y: 7.2, rotate: -14, scale: 0.92) {
+                    drawBee(awake: true)
+                }
+            } else {
+                withTransform(translateX: 13, y: 6.8, rotate: 8, scale: 0.82) {
+                    drawBee(awake: false)
+                }
+                drawZ(at: NSPoint(x: 4, y: 6.8), size: 1.8)
+                drawZ(at: NSPoint(x: 1.8, y: 9.8), size: 2.2)
+                drawZ(at: NSPoint(x: 0.4, y: 13.4), size: 2.6)
+            }
             return true
         }
         image.isTemplate = true
@@ -16,49 +29,176 @@ enum BeeGlyph {
         return image
     }
 
-    private static func draw(awake: Bool) {
-        NSColor.black.set()
-        drawWings()
-        drawHeadAndAntennae()
-        let body = NSBezierPath(ovalIn: NSRect(x: 5.5, y: 2, width: 7, height: 10.5))
-        let stripes = [NSRect(x: 4, y: 5, width: 10, height: 1.2), NSRect(x: 4, y: 8, width: 10, height: 1.2)]
+    /// Draws a bee facing left with its body centred on the origin, about 17 points wide and 15 tall.
+    /// Awake, the bee is solid, its wings are raised, and its eyes are lightning bolts cut out of the body;
+    /// asleep, it is drawn in outline with folded wings and shut eyes.
+    private static func drawBee(awake: Bool) {
+        drawWings(raised: awake)
+        drawAntennae()
+        let body = bodyPath()
+        // A thin gap keeps the body from melting into the wings and antennae behind it.
+        body.lineWidth = 1.6
+        erasing { body.stroke() }
         if awake {
             body.fill()
-            withClip(body) { stripes.forEach { $0.fill(using: .clear) } }
+            withClip(body) {
+                erasing { drawMarkings(awake: true) }
+            }
         } else {
+            erasing { body.fill() }
             body.lineWidth = 1.2
             body.stroke()
-            withClip(body) { stripes.forEach { $0.fill() } }
-        }
-        let stinger = NSBezierPath()
-        stinger.move(to: NSPoint(x: 8.2, y: 2.4))
-        stinger.line(to: NSPoint(x: 9, y: 0.4))
-        stinger.line(to: NSPoint(x: 9.8, y: 2.4))
-        stinger.close()
-        stinger.fill()
-    }
-
-    private static func drawWings() {
-        for side in [-1.0, 1.0] {
-            let wing = NSBezierPath(ovalIn: NSRect(x: -2.8, y: -1.7, width: 5.6, height: 3.4))
-            var placement = AffineTransform(translationByX: 9 + side * 4.4, byY: 11.6)
-            placement.rotate(byDegrees: side * 30)
-            wing.transform(using: placement)
-            wing.lineWidth = 1
-            wing.stroke()
+            withClip(body) { drawMarkings(awake: false) }
         }
     }
 
-    private static func drawHeadAndAntennae() {
-        NSBezierPath(ovalIn: NSRect(x: 7.3, y: 12.6, width: 3.4, height: 3.2)).fill()
-        let antennae = NSBezierPath()
-        antennae.move(to: NSPoint(x: 8.4, y: 15.4))
-        antennae.line(to: NSPoint(x: 7, y: 17.4))
-        antennae.move(to: NSPoint(x: 9.6, y: 15.4))
-        antennae.line(to: NSPoint(x: 11, y: 17.4))
-        antennae.lineWidth = 0.9
-        antennae.lineCapStyle = .round
-        antennae.stroke()
+    /// A plump teardrop: round at the head, tapering smoothly into the stinger.
+    private static func bodyPath() -> NSBezierPath {
+        let tip = NSPoint(x: 9, y: -0.8)
+        // Each segment runs anticlockwise from the stinger: over the back, round the face, and under the belly.
+        let segments: [(to: NSPoint, control1: NSPoint, control2: NSPoint)] = [
+            (NSPoint(x: 0, y: 5.2), NSPoint(x: 6.4, y: 1.6), NSPoint(x: 4.4, y: 5.2)),
+            (NSPoint(x: -7.4, y: 0), NSPoint(x: -4.2, y: 5.2), NSPoint(x: -7.4, y: 3)),
+            (NSPoint(x: 0, y: -5.2), NSPoint(x: -7.4, y: -3), NSPoint(x: -4.2, y: -5.2)),
+            (tip, NSPoint(x: 4.4, y: -5.2), NSPoint(x: 6.4, y: -2.8))
+        ]
+        let body = NSBezierPath()
+        body.move(to: tip)
+        for segment in segments {
+            body.curve(to: segment.to, controlPoint1: segment.control1, controlPoint2: segment.control2)
+        }
+        body.close()
+        body.lineJoinStyle = .round
+        return body
+    }
+
+    /// Stripes across the back half and the face on the front; the caller decides whether they paint or cut.
+    private static func drawMarkings(awake: Bool) {
+        NSRect(x: 0.6, y: -6, width: 1.2, height: 12).fill()
+        NSRect(x: 3.6, y: -6, width: 1.2, height: 12).fill()
+        if awake {
+            drawBolt(centeredAt: NSPoint(x: -5, y: 1.6))
+            drawBolt(centeredAt: NSPoint(x: -2, y: 1.6))
+        } else {
+            drawClosedEye(centeredAt: NSPoint(x: -5, y: 1.2))
+            drawClosedEye(centeredAt: NSPoint(x: -2, y: 1.2))
+        }
+        drawSmile()
+    }
+
+    private static func drawWings(raised: Bool) {
+        // The far wing sits behind and leans back further than the near one.
+        let wings: [(center: NSPoint, width: CGFloat, height: CGFloat, tilt: CGFloat)] = raised
+            ? [(NSPoint(x: 6.8, y: 5.4), 4.8, 6.4, -55), (NSPoint(x: 3.8, y: 6.6), 5.6, 7.4, -30)]
+            : [(NSPoint(x: 6.6, y: 3.6), 4.2, 6.4, -78), (NSPoint(x: 4, y: 4.6), 4.8, 7.2, -66)]
+        for wing in wings {
+            let frame = NSRect(x: -wing.width / 2, y: -wing.height / 2, width: wing.width, height: wing.height)
+            let path = NSBezierPath(ovalIn: frame)
+            var placement = AffineTransform(translationByX: wing.center.x, byY: wing.center.y)
+            placement.rotate(byDegrees: wing.tilt)
+            path.transform(using: placement)
+            erasing { path.fill() }
+            path.lineWidth = 1.1
+            path.stroke()
+        }
+    }
+
+    private static func drawAntennae() {
+        let stalks: [(start: NSPoint, control: NSPoint, tip: NSPoint)] = [
+            (NSPoint(x: -4.8, y: 3.4), NSPoint(x: -5.6, y: 6.6), NSPoint(x: -8, y: 7.4)),
+            (NSPoint(x: -1.8, y: 4.6), NSPoint(x: -2, y: 8.2), NSPoint(x: -4.4, y: 9.6))
+        ]
+        for stalk in stalks {
+            let path = NSBezierPath()
+            path.move(to: stalk.start)
+            path.curve(to: stalk.tip, controlPoint1: stalk.control, controlPoint2: stalk.control)
+            path.lineWidth = 1
+            path.lineCapStyle = .round
+            path.stroke()
+            NSBezierPath(ovalIn: NSRect(x: stalk.tip.x - 1, y: stalk.tip.y - 1, width: 2, height: 2)).fill()
+        }
+    }
+
+    /// A lightning bolt about 2 points wide and 3.6 tall.
+    private static func drawBolt(centeredAt center: NSPoint) {
+        let points: [(CGFloat, CGFloat)] = [
+            (0.2, 1.8), (-1, -0.1), (-0.1, -0.1), (-0.5, -1.8), (1, 0.4), (0.1, 0.4), (0.8, 1.8)
+        ]
+        let bolt = NSBezierPath()
+        for (index, point) in points.enumerated() {
+            let location = NSPoint(x: center.x + point.0, y: center.y + point.1)
+            if index == 0 {
+                bolt.move(to: location)
+            } else {
+                bolt.line(to: location)
+            }
+        }
+        bolt.close()
+        bolt.fill()
+    }
+
+    /// A sleepy downward arc.
+    private static func drawClosedEye(centeredAt center: NSPoint) {
+        let eye = NSBezierPath()
+        eye.move(to: NSPoint(x: center.x - 1.1, y: center.y + 0.4))
+        eye.curve(
+            to: NSPoint(x: center.x + 1.1, y: center.y + 0.4),
+            controlPoint1: NSPoint(x: center.x - 0.7, y: center.y - 0.7),
+            controlPoint2: NSPoint(x: center.x + 0.7, y: center.y - 0.7)
+        )
+        eye.lineWidth = 0.9
+        eye.lineCapStyle = .round
+        eye.stroke()
+    }
+
+    private static func drawSmile() {
+        let smile = NSBezierPath()
+        smile.move(to: NSPoint(x: -4.6, y: -1.6))
+        smile.curve(
+            to: NSPoint(x: -2.8, y: -1.6),
+            controlPoint1: NSPoint(x: -4.3, y: -2.6),
+            controlPoint2: NSPoint(x: -3.1, y: -2.6)
+        )
+        smile.lineWidth = 0.9
+        smile.lineCapStyle = .round
+        smile.stroke()
+    }
+
+    private static func drawZ(at origin: NSPoint, size: CGFloat) {
+        let letter = NSBezierPath()
+        letter.move(to: NSPoint(x: origin.x, y: origin.y + size))
+        letter.line(to: NSPoint(x: origin.x + size, y: origin.y + size))
+        letter.line(to: NSPoint(x: origin.x, y: origin.y))
+        letter.line(to: NSPoint(x: origin.x + size, y: origin.y))
+        letter.lineWidth = 0.9
+        letter.lineJoinStyle = .round
+        letter.lineCapStyle = .round
+        letter.stroke()
+    }
+
+    private static func withTransform(
+        translateX x: CGFloat,
+        y: CGFloat,
+        rotate degrees: CGFloat,
+        scale: CGFloat,
+        _ draw: () -> Void
+    ) {
+        NSGraphicsContext.saveGraphicsState()
+        let transform = NSAffineTransform()
+        transform.translateX(by: x, yBy: y)
+        transform.rotate(byDegrees: degrees)
+        transform.scale(by: scale)
+        transform.concat()
+        draw()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// Runs `draw` with every mark cutting a transparent hole instead of painting.
+    private static func erasing(_ draw: () -> Void) {
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.compositingOperation = .clear
+        draw()
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private static func withClip(_ path: NSBezierPath, _ draw: () -> Void) {
