@@ -5,6 +5,8 @@ struct BeeState: Equatable, Sendable {
     var mode: Mode
     var schedule: Schedule
     var integrations: [IntegrationID: IntegrationState]
+    var batteryLimit: BatteryLimit
+    var power: PowerSource
 }
 
 enum BeeEvent: Equatable, Sendable {
@@ -13,6 +15,8 @@ enum BeeEvent: Equatable, Sendable {
     case resumeAutomatic
     case scheduleChanged(Schedule)
     case integrationChanged(IntegrationID, IntegrationState)
+    case batteryLimitChanged(BatteryLimit)
+    case powerChanged(PowerSource)
     /// Time passed; lets timed modes expire.
     case tick
 }
@@ -36,6 +40,7 @@ enum AwakeReason: Equatable, Sendable {
 
 enum IdleReason: Equatable, Sendable {
     case paused(until: Date)
+    case lowBattery(charge: Int, limit: Int)
     case nothingActive(nextScheduledStart: Date?)
 }
 
@@ -54,31 +59,38 @@ extension BeeState {
             schedule = newSchedule
         case let .integrationChanged(id, state):
             integrations[id] = state
+        case let .batteryLimitChanged(limit):
+            batteryLimit = limit
+        case let .powerChanged(source):
+            power = source
         case .tick:
             break
         }
     }
 
-    /// Precedence: pause > manual keep-awake > schedule > integrations.
+    /// Precedence: pause > low battery > manual keep-awake > schedule > integrations.
     func activity(at now: Date, calendar: Calendar) -> Activity {
-        switch mode.expired(at: now) {
-        case let .paused(until):
+        let mode = mode.expired(at: now)
+        if case let .paused(until) = mode {
             return .idle(.paused(until: until))
-        case let .keepAwake(expiry):
-            return .awake(.manual(expiry))
-        case .automatic:
-            if let end = schedule.activeWindowEnd(at: now, calendar: calendar) {
-                return .awake(.schedule(until: end))
-            }
-            if let (id, summary) = firstActiveIntegration {
-                return .awake(.integration(id, summary: summary))
-            }
-            return .idle(.nothingActive(nextScheduledStart: schedule.nextWindowStart(after: now, calendar: calendar)))
         }
+        if let charge = batteryLimit.lowCharge(on: power) {
+            return .idle(.lowBattery(charge: charge, limit: batteryLimit.minimumCharge))
+        }
+        if case let .keepAwake(expiry) = mode {
+            return .awake(.manual(expiry))
+        }
+        if let end = schedule.activeWindowEnd(at: now, calendar: calendar) {
+            return .awake(.schedule(until: end))
+        }
+        if let (id, summary) = firstActiveIntegration {
+            return .awake(.integration(id, summary: summary))
+        }
+        return .idle(.nothingActive(nextScheduledStart: schedule.nextWindowStart(after: now, calendar: calendar)))
     }
 
     /// The next moment `activity` can change without an event, so callers can wake up exactly then.
-    /// Integration changes arrive as events and are not included.
+    /// Integration and power changes arrive as events and are not included.
     func nextTransition(after now: Date, calendar: Calendar) -> Date? {
         let candidates = [
             mode.expiresAt,

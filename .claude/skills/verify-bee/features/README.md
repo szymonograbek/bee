@@ -33,3 +33,4 @@ Each feature file starts with an H1 title and one paragraph of user-visible beha
 - [Display sleep](./display-sleep.md) covers the option to keep the screen on too.
 - [Lid closed](./lid-closed.md) covers staying awake with the MacBook lid closed through `pmset disablesleep`.
 - [Schedule](./schedule.md) covers the weekly schedule editor and its effect.
+- [Low battery](./low-battery.md) covers letting the Mac sleep below a battery limit, and ignoring it while plugged in.

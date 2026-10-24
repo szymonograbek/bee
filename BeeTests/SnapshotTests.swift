@@ -32,6 +32,15 @@ struct SnapshotTests {
     }
 
     @Test
+    func olderSnapshotLeavesBatteryLimitOff() throws {
+        let defaults = try #require(UserDefaults(suiteName: "SnapshotTests.battery"))
+        defer { defaults.removePersistentDomain(forName: "SnapshotTests.battery") }
+        defaults.set(Data(savedBeforeLidSetting.utf8), forKey: "bee.snapshot.v1")
+
+        #expect(Snapshot.load(from: defaults).batteryLimit == .off)
+    }
+
+    @Test
     func lidSettingSurvivesSaveAndLoad() throws {
         let defaults = try #require(UserDefaults(suiteName: "SnapshotTests.roundTrip"))
         defer { defaults.removePersistentDomain(forName: "SnapshotTests.roundTrip") }

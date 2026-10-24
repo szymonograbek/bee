@@ -80,6 +80,8 @@ extension Activity {
             ActivityStatus(headline: "Awake while \(id.displayName) works", detail: summary)
         case let .idle(.paused(until)):
             ActivityStatus(headline: "Paused until \(moment(until))", detail: "Schedule and integrations are on hold")
+        case let .idle(.lowBattery(charge, limit)):
+            ActivityStatus(headline: "Idle on low battery", detail: "Battery at \(charge)%, below your \(limit)% limit")
         case let .idle(.nothingActive(nextScheduledStart?)):
             ActivityStatus(headline: "Idle", detail: "Schedule starts \(moment(nextScheduledStart))")
         case .idle(.nothingActive(nil)):

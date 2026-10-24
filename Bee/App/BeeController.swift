@@ -2,32 +2,6 @@ import AppKit
 import Observation
 import ServiceManagement
 
-/// What the UI can ask for. Presets rather than timestamps: the controller owns the clock and calendar.
-enum BeeCommand: Equatable {
-    case keepAwake(KeepAwakeDuration)
-    case pause(PauseLength)
-    case resumeAutomatic
-    case setSchedule(Schedule)
-    case setIntegration(IntegrationID, enabled: Bool)
-    case setOption(BeeOption, Bool)
-}
-
-/// An on/off choice in Settings.
-enum BeeOption: Equatable {
-    case launchAtLogin
-    case preventsDisplaySleep
-    case keepsAwakeWithLidClosed
-    case keepsAwakeForT3AutoResume
-}
-
-/// Mirrors `SMAppService.mainApp.status`, which is the source of truth, so it is never persisted.
-enum LoginItemStatus: Equatable {
-    case enabled
-    case disabled
-    case requiresApproval
-    case failed(String)
-}
-
 /// Owns `BeeState` and every effect derived from it: the power assertion, disabled sleep, timers, pollers, and
 /// persistence.
 @MainActor
@@ -47,6 +21,7 @@ final class BeeController {
     @ObservationIgnored private var lastSaved: Snapshot
     @ObservationIgnored private var wakeTask: Task<Void, Never>?
     @ObservationIgnored private var pollers: [IntegrationID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var powerWatcher: Task<Void, Never>?
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
 
     static func live() -> BeeController {
@@ -58,7 +33,13 @@ final class BeeController {
         let integrations = Dictionary(uniqueKeysWithValues: IntegrationID.allCases.map { id in
             (id, snapshot.enabledIntegrations.contains(id) ? IntegrationState.checking : .disabled)
         })
-        let state = BeeState(mode: snapshot.mode, schedule: snapshot.schedule, integrations: integrations)
+        let state = BeeState(
+            mode: snapshot.mode,
+            schedule: snapshot.schedule,
+            integrations: integrations,
+            batteryLimit: snapshot.batteryLimit,
+            power: PowerSourceReader.current()
+        )
         self.state = state
         self.activity = state.activity(at: Date(), calendar: calendar)
         self.preventsDisplaySleep = snapshot.preventsDisplaySleep
@@ -70,6 +51,7 @@ final class BeeController {
         self.defaults = defaults
         self.lastSaved = snapshot
         observeSystemEvents()
+        watchPowerSource()
         // Normalizes a persisted pause or keep-awake that expired while Bee was not running.
         send(.tick)
         sleepDisabler.refreshPermission()
@@ -86,6 +68,8 @@ final class BeeController {
             send(.resumeAutomatic)
         case let .setSchedule(schedule):
             send(.scheduleChanged(schedule))
+        case let .setBatteryLimit(limit):
+            send(.batteryLimitChanged(limit))
         case let .setIntegration(id, enabled):
             setIntegration(id, enabled: enabled)
         case let .setOption(option, isOn):
@@ -155,7 +139,8 @@ final class BeeController {
             enabledIntegrations: Set(IntegrationID.allCases.filter(isEnabled)),
             preventsDisplaySleep: preventsDisplaySleep,
             keepsAwakeWithLidClosed: keepsAwakeWithLidClosed,
-            keepsAwakeForT3AutoResume: keepsAwakeForT3AutoResume
+            keepsAwakeForT3AutoResume: keepsAwakeForT3AutoResume,
+            batteryLimit: state.batteryLimit
         )
         guard snapshot != lastSaved else { return }
         snapshot.save(to: defaults)
@@ -191,6 +176,14 @@ final class BeeController {
         ]
         for name in timeChanges {
             observe(name, on: .default) { $0.send(.tick) }
+        }
+    }
+
+    private func watchPowerSource() {
+        powerWatcher = Task { [weak self] in
+            for await _ in PowerSourceReader.changes() {
+                self?.send(.powerChanged(PowerSourceReader.current()))
+            }
         }
     }
 

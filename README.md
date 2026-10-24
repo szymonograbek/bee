@@ -8,8 +8,9 @@ Bee is a macOS menu bar app that keeps your Mac awake. It works like Amphetamine
 - **Pause** for an hour, the rest of today, or the rest of the week.
 - **Schedule**: weekly windows, 08:00 to 16:00 on workdays by default. Windows can run past midnight.
 - **T3 Code**: keeps the Mac awake while any T3 Code thread is running.
+- **Low battery**: optionally lets the Mac sleep once the battery drops below a limit (20% by default), unless it is plugged in.
 
-A pause beats a manual keep-awake, which beats the schedule, which beats integrations. By default only the Mac stays awake, so the display can still sleep. Settings can keep the display on too.
+A pause beats the low-battery limit, which beats a manual keep-awake, which beats the schedule, which beats integrations. By default only the Mac stays awake, so the display can still sleep. Settings can keep the display on too.
 
 ## Lid closed
 
