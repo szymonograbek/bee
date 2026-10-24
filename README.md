@@ -1,8 +1,20 @@
-<img src="Bee/Resources/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" width="64" height="64" alt="">
+<p align="center">
+  <img src="Bee/Resources/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width="128" height="128" alt="Bee">
+</p>
 
 # Bee
 
 Bee is a macOS menu bar app that keeps your Mac awake. It works like Amphetamine, with a weekly schedule and a T3 Code integration.
+
+## Install
+
+```sh
+brew install --cask szymonograbek/tap/bee
+```
+
+Bee is ad-hoc signed, not notarized. The cask removes the quarantine flag so Gatekeeper lets it open.
+
+## Features
 
 - **Keep Awake** for a preset time (15 minutes to indefinitely).
 - **Pause** for an hour, the rest of today, or the rest of the week.
@@ -18,36 +30,16 @@ Power assertions don't stop a MacBook from sleeping when its lid closes. Turn on
 
 `pmset` needs root. The first time you turn the setting on, Bee asks for your password once and installs `/etc/sudoers.d/bee`, which lets your account run only `/usr/bin/pmset -a disablesleep 1` and `/usr/bin/pmset -a disablesleep 0` without a password. If another app (Amphetamine, for example) already allows those commands, Bee uses that and doesn't ask. `brew uninstall` removes the file.
 
-## Install
+## T3 Code
 
-```sh
-brew install --cask szymonograbek/tap/bee
-```
+Bee keeps the Mac awake while any T3 Code thread is queued, running, or waiting on you. It only reads T3's local database, read-only, and notices changes within about a second.
 
-Bee is ad-hoc signed, not notarized. The cask removes the quarantine flag so Gatekeeper lets it open.
+When a thread hits a usage limit and T3 is set to auto-resume it, **Wait for auto-resume** (Settings → Integrations, on by default) keeps the Mac awake until two minutes past the reset time, so T3 can start the resumed run.
 
-## Development
+If a T3 Code update changes its internal database, Bee shows the integration as unavailable instead of guessing.
 
-Requires Xcode, [XcodeGen](https://github.com/yonaskolb/XcodeGen), and [SwiftLint](https://github.com/realm/SwiftLint) (`brew install xcodegen swiftlint`).
+## Contributing
 
-```sh
-make run    # generate the Xcode project, build, and launch Bee
-make test   # run the unit tests
-make lint   # swiftlint --strict
-```
-
-`Bee.xcodeproj` is generated from `project.yml`. Edit `project.yml`, not the project.
-
-## Releasing
-
-Commits follow [Conventional Commits](https://www.conventionalcommits.org) (`feat:`, `fix:`, …); pull requests are checked with commitlint. On every push to `main`, [release-please](https://github.com/googleapis/release-please) keeps a release PR open that bumps `MARKETING_VERSION` in `project.yml` and updates `CHANGELOG.md`. Merging it tags the release, after which the workflow builds `Bee.zip` with `make release`, attaches it to the GitHub release, and updates the cask in [szymonograbek/homebrew-tap](https://github.com/szymonograbek/homebrew-tap) from `packaging/homebrew/bee.rb`.
-
-## T3 Code integration
-
-Bee reads T3's local SQLite database (`~/.t3/userdata/statev2.sqlite`, or under `$T3CODE_HOME`) with one query through `/usr/bin/sqlite3 -readonly`. Any thread with an unfinished run (`queued`, `preparing`, `starting`, `running`, or `waiting` on you) keeps the Mac awake. Bee watches the database and its write-ahead log with FSEvents, so it re-reads within about a second of T3 committing a change. A 60-second timer is the fallback.
-
-When a thread hits a usage limit and T3 is set to auto-resume it, the thread records the reset time. With **Wait for auto-resume** on (Settings → Integrations, on by default), Bee stays awake until two minutes past that time, which gives T3 room to start the resumed run.
-
-The query depends on T3's internal schema and can break when T3 changes it. Bee then shows the integration as unavailable rather than guessing.
+See [DEVELOPERS.md](DEVELOPERS.md).
 
 Created in [T3 Code](https://t3.codes).
