@@ -11,11 +11,11 @@ enum BeeGlyph {
         let image = NSImage(size: size, flipped: false) { _ in
             NSColor.black.set()
             if awake {
-                withTransform(translateX: 10.8, y: 7.2, rotate: -14, scale: 0.92) {
+                withTransform(translate: NSPoint(x: 10.8, y: 7.2), rotate: -14, scale: 0.92) {
                     drawBee(awake: true)
                 }
             } else {
-                withTransform(translateX: 13, y: 6.8, rotate: 8, scale: 0.82) {
+                withTransform(translate: NSPoint(x: 13, y: 6.8), rotate: 8, scale: 0.82) {
                     drawBee(awake: false)
                 }
                 drawZ(at: NSPoint(x: 4, y: 6.8), size: 1.8)
@@ -56,11 +56,27 @@ enum BeeGlyph {
     private static func bodyPath() -> NSBezierPath {
         let tip = NSPoint(x: 9, y: -0.8)
         // Each segment runs anticlockwise from the stinger: over the back, round the face, and under the belly.
-        let segments: [(to: NSPoint, control1: NSPoint, control2: NSPoint)] = [
-            (NSPoint(x: 0, y: 5.2), NSPoint(x: 6.4, y: 1.6), NSPoint(x: 4.4, y: 5.2)),
-            (NSPoint(x: -7.4, y: 0), NSPoint(x: -4.2, y: 5.2), NSPoint(x: -7.4, y: 3)),
-            (NSPoint(x: 0, y: -5.2), NSPoint(x: -7.4, y: -3), NSPoint(x: -4.2, y: -5.2)),
-            (tip, NSPoint(x: 4.4, y: -5.2), NSPoint(x: 6.4, y: -2.8))
+        let segments = [
+            CurveSegment(
+                to: NSPoint(x: 0, y: 5.2),
+                control1: NSPoint(x: 6.4, y: 1.6),
+                control2: NSPoint(x: 4.4, y: 5.2)
+            ),
+            CurveSegment(
+                to: NSPoint(x: -7.4, y: 0),
+                control1: NSPoint(x: -4.2, y: 5.2),
+                control2: NSPoint(x: -7.4, y: 3)
+            ),
+            CurveSegment(
+                to: NSPoint(x: 0, y: -5.2),
+                control1: NSPoint(x: -7.4, y: -3),
+                control2: NSPoint(x: -4.2, y: -5.2)
+            ),
+            CurveSegment(
+                to: tip,
+                control1: NSPoint(x: 4.4, y: -5.2),
+                control2: NSPoint(x: 6.4, y: -2.8)
+            )
         ]
         let body = NSBezierPath()
         body.move(to: tip)
@@ -88,9 +104,15 @@ enum BeeGlyph {
 
     private static func drawWings(raised: Bool) {
         // The far wing sits behind and leans back further than the near one.
-        let wings: [(center: NSPoint, width: CGFloat, height: CGFloat, tilt: CGFloat)] = raised
-            ? [(NSPoint(x: 6.8, y: 5.4), 4.8, 6.4, -55), (NSPoint(x: 3.8, y: 6.6), 5.6, 7.4, -30)]
-            : [(NSPoint(x: 6.6, y: 3.6), 4.2, 6.4, -78), (NSPoint(x: 4, y: 4.6), 4.8, 7.2, -66)]
+        let wings = raised
+            ? [
+                Wing(center: NSPoint(x: 6.8, y: 5.4), width: 4.8, height: 6.4, tilt: -55),
+                Wing(center: NSPoint(x: 3.8, y: 6.6), width: 5.6, height: 7.4, tilt: -30)
+            ]
+            : [
+                Wing(center: NSPoint(x: 6.6, y: 3.6), width: 4.2, height: 6.4, tilt: -78),
+                Wing(center: NSPoint(x: 4, y: 4.6), width: 4.8, height: 7.2, tilt: -66)
+            ]
         for wing in wings {
             let frame = NSRect(x: -wing.width / 2, y: -wing.height / 2, width: wing.width, height: wing.height)
             let path = NSBezierPath(ovalIn: frame)
@@ -104,9 +126,9 @@ enum BeeGlyph {
     }
 
     private static func drawAntennae() {
-        let stalks: [(start: NSPoint, control: NSPoint, tip: NSPoint)] = [
-            (NSPoint(x: -4.8, y: 3.4), NSPoint(x: -5.6, y: 6.6), NSPoint(x: -8, y: 7.4)),
-            (NSPoint(x: -1.8, y: 4.6), NSPoint(x: -2, y: 8.2), NSPoint(x: -4.4, y: 9.6))
+        let stalks = [
+            Antenna(start: NSPoint(x: -4.8, y: 3.4), control: NSPoint(x: -5.6, y: 6.6), tip: NSPoint(x: -8, y: 7.4)),
+            Antenna(start: NSPoint(x: -1.8, y: 4.6), control: NSPoint(x: -2, y: 8.2), tip: NSPoint(x: -4.4, y: 9.6))
         ]
         for stalk in stalks {
             let path = NSBezierPath()
@@ -177,15 +199,14 @@ enum BeeGlyph {
     }
 
     private static func withTransform(
-        translateX x: CGFloat,
-        y: CGFloat,
+        translate offset: NSPoint,
         rotate degrees: CGFloat,
         scale: CGFloat,
         _ draw: () -> Void
     ) {
         NSGraphicsContext.saveGraphicsState()
         let transform = NSAffineTransform()
-        transform.translateX(by: x, yBy: y)
+        transform.translateX(by: offset.x, yBy: offset.y)
         transform.rotate(byDegrees: degrees)
         transform.scale(by: scale)
         transform.concat()
@@ -207,4 +228,23 @@ enum BeeGlyph {
         draw()
         NSGraphicsContext.restoreGraphicsState()
     }
+}
+
+private struct CurveSegment {
+    let to: NSPoint
+    let control1: NSPoint
+    let control2: NSPoint
+}
+
+private struct Wing {
+    let center: NSPoint
+    let width: CGFloat
+    let height: CGFloat
+    let tilt: CGFloat
+}
+
+private struct Antenna {
+    let start: NSPoint
+    let control: NSPoint
+    let tip: NSPoint
 }
