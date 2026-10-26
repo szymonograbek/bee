@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/szymonograbek/bee/compare/v1.2.0...v1.2.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* satisfy SwiftLint in the menu bar bee glyph ([50deeaf](https://github.com/szymonograbek/bee/commit/50deeaf5c4ecd64cea0353f63d99caed0e5f6c04))
+* satisfy SwiftLint in the menu bar bee glyph ([51a3d5d](https://github.com/szymonograbek/bee/commit/51a3d5dd43afacbabfd96a4317d6af0fdc89502e))
+
 ## [1.2.0](https://github.com/szymonograbek/bee/compare/v1.1.1...v1.2.0) (2026-10-24)
 
 
