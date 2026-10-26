@@ -8,12 +8,7 @@ struct T3Integration: Integration {
 
     init(keepsAwakeForAutoResume: Bool, environment: [String: String] = ProcessInfo.processInfo.environment) {
         self.keepsAwakeForAutoResume = keepsAwakeForAutoResume
-        let home = if let custom = environment["T3CODE_HOME"], !custom.isEmpty {
-            URL(filePath: custom, directoryHint: .isDirectory)
-        } else {
-            FileManager.default.homeDirectoryForCurrentUser.appending(path: ".t3", directoryHint: .isDirectory)
-        }
-        userData = home.appending(path: "userdata", directoryHint: .isDirectory)
+        userData = T3Home(environment: environment).userData
     }
 
     private static let databaseName = "statev2.sqlite"
@@ -53,9 +48,10 @@ struct T3Integration: Integration {
     /// Every T3 state change commits to the database, landing in its write-ahead log first.
     /// The shared-memory index is left out because Bee's own reads touch it.
     func changes() -> AsyncStream<Void> {
-        FileWatcher.changes(
-            in: userData,
-            fileNames: [Self.databaseName, "\(Self.databaseName)-wal"],
+        let fileNames: Set = [Self.databaseName, "\(Self.databaseName)-wal"]
+        return FileWatcher.changes(
+            in: [userData],
+            where: { fileNames.contains($0.lastPathComponent) },
             latency: .seconds(1)
         )
     }

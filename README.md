@@ -4,7 +4,7 @@
 
 # Bee
 
-Bee is a macOS menu bar app that keeps your Mac awake. It works like Amphetamine, with a weekly schedule and a T3 Code integration.
+Bee is a macOS menu bar app that keeps your Mac awake. It works like Amphetamine, with a weekly schedule and T3 Code, Claude Code, and Codex integrations.
 
 ## Install
 
@@ -20,6 +20,7 @@ Bee is ad-hoc signed, not notarized. The cask removes the quarantine flag so Gat
 - **Pause** for an hour, the rest of today, or the rest of the week.
 - **Schedule**: weekly windows, 08:00 to 16:00 on workdays by default. Windows can run past midnight.
 - **T3 Code**: keeps the Mac awake while any T3 Code thread is running.
+- **Claude Code** and **Codex**: keep the Mac awake while a session you started is working or waiting on you.
 - **Low battery**: optionally lets the Mac sleep once the battery drops below a limit (20% by default), unless it is plugged in.
 
 A pause beats the low-battery limit, which beats a manual keep-awake, which beats the schedule, which beats integrations. By default only the Mac stays awake, so the display can still sleep. Settings can keep the display on too.
@@ -37,6 +38,14 @@ Bee keeps the Mac awake while any T3 Code thread is queued, running, or waiting 
 When a thread hits a usage limit and T3 is set to auto-resume it, **Wait for auto-resume** (Settings → Integrations, on by default) keeps the Mac awake until two minutes past the reset time, so T3 can start the resumed run.
 
 If a T3 Code update changes its internal database, Bee shows the integration as unavailable instead of guessing.
+
+## Claude Code and Codex
+
+Bee keeps the Mac awake while a Claude Code or Codex session you started, in a terminal or another app, is mid-turn or waiting on you. It needs no hooks or setup: it reads the state both CLIs already keep on disk and notices changes within about a second.
+
+Sessions that T3 Code runs are T3 threads, so only the T3 Code integration counts them. A `claude` you type into a terminal inside T3 Code still counts as Claude Code.
+
+Bee looks in `~/.claude` and `~/.codex` (or `$CLAUDE_CONFIG_DIR` and `$CODEX_HOME` when Bee is launched with them), plus any custom home set for a provider in T3 Code's settings.
 
 ## Contributing
 

@@ -30,6 +30,7 @@ Each feature file starts with an H1 title and one paragraph of user-visible beha
 - [Keep awake](./keep-awake.md) covers timed and indefinite keep-awake and stopping it.
 - [Pause](./pause.md) covers pausing for an hour, today, or this week, and resuming.
 - [T3 Code integration](./t3-integration.md) covers staying awake while a T3 thread runs and switching the integration off.
+- [Claude Code and Codex integrations](./agent-integrations.md) covers staying awake while a Claude Code or Codex session the user started is working, and ignoring the ones T3 Code runs.
 - [Display sleep](./display-sleep.md) covers the option to keep the screen on too.
 - [Lid closed](./lid-closed.md) covers staying awake with the MacBook lid closed through `pmset disablesleep`.
 - [Schedule](./schedule.md) covers the weekly schedule editor and its effect.

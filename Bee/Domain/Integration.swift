@@ -2,11 +2,16 @@ import Foundation
 
 /// Every integration Bee knows about. Adding one starts here.
 enum IntegrationID: String, Codable, CaseIterable, Sendable {
+    /// First so that when several are active, the menu credits T3 Code.
     case t3Code
+    case claudeCode
+    case codex
 
     var displayName: String {
         switch self {
         case .t3Code: "T3 Code"
+        case .claudeCode: "Claude Code"
+        case .codex: "Codex"
         }
     }
 }

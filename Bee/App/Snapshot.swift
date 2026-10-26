@@ -14,7 +14,7 @@ struct Snapshot: Codable, Equatable {
     private static let firstLaunch = Self(
         mode: .automatic,
         schedule: .workHours,
-        enabledIntegrations: [.t3Code],
+        enabledIntegrations: Set(IntegrationID.allCases),
         preventsDisplaySleep: false,
         keepsAwakeWithLidClosed: false,
         keepsAwakeForT3AutoResume: true,

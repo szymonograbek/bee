@@ -195,6 +195,8 @@ private struct IntegrationOptions: View {
                 Text("Wait for auto-resume")
                 Text("Stays awake while a thread that hit a usage limit waits to resume on its own.")
             }
+        case .claudeCode, .codex:
+            EmptyView()
         }
     }
 }
@@ -233,6 +235,8 @@ private extension IntegrationID {
     var explanation: String {
         switch self {
         case .t3Code: "Keeps your Mac awake while any T3 Code thread is running or waiting on you."
+        case .claudeCode: "Keeps your Mac awake while a Claude Code session you started is working or waiting on you."
+        case .codex: "Keeps your Mac awake while a Codex session you started is working or waiting on you."
         }
     }
 }

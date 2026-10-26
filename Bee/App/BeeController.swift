@@ -288,6 +288,8 @@ extension BeeController {
     private func integration(_ id: IntegrationID) -> any Integration {
         switch id {
         case .t3Code: T3Integration(keepsAwakeForAutoResume: keepsAwakeForT3AutoResume)
+        case .claudeCode: ClaudeIntegration()
+        case .codex: CodexIntegration()
         }
     }
 }
