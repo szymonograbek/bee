@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/szymonograbek/bee/compare/v1.2.1...v1.3.0) (2026-10-26)
+
+
+### Features
+
+* keep awake while Claude Code or Codex sessions work ([faf3158](https://github.com/szymonograbek/bee/commit/faf3158753eda0a1b4429cc879e27b19c3eaebfb))
+* keep awake while Claude Code or Codex sessions work ([895d040](https://github.com/szymonograbek/bee/commit/895d040e5b3f174ed7ca204be9e05c2efdd77449))
+
 ## [1.2.1](https://github.com/szymonograbek/bee/compare/v1.2.0...v1.2.1) (2026-10-26)
 
 
