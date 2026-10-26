@@ -1,15 +1,19 @@
 import CoreServices
 import Foundation
 
-/// Signals when named files in one directory change. Knows nothing about what the files contain.
+/// Signals when files under some directories change. Knows nothing about what the files contain.
 enum FileWatcher {
-    /// Yields once per burst of changes to any file in `directory` named in `fileNames`. FSEvents coalesces a
-    /// burst over `latency`, but delivers the first change after a quiet period immediately. Watching the
-    /// directory rather than the files survives a file being deleted and recreated.
-    static func changes(in directory: URL, fileNames: Set<String>, latency: Duration) -> AsyncStream<Void> {
+    /// Yields once per burst of changes to any file under `directories`, at any depth, whose URL passes
+    /// `isRelevant`. FSEvents coalesces a burst over `latency`, but delivers the first change after a quiet
+    /// period immediately. Watching directories rather than files survives a file being deleted and recreated.
+    static func changes(
+        in directories: [URL],
+        where isRelevant: @escaping @Sendable (URL) -> Bool,
+        latency: Duration
+    ) -> AsyncStream<Void> {
         AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
-            let sink = Sink(fileNames: fileNames, continuation: continuation)
-            guard let stream = EventStream(watching: directory, latency: latency, sink: sink) else {
+            let sink = Sink(isRelevant: isRelevant, continuation: continuation)
+            guard let stream = EventStream(watching: directories, latency: latency, sink: sink) else {
                 continuation.finish()
                 return
             }
@@ -20,16 +24,16 @@ enum FileWatcher {
 
 /// Receives FSEvents callbacks and forwards the relevant ones.
 private final class Sink: Sendable {
-    private let fileNames: Set<String>
+    private let isRelevant: @Sendable (URL) -> Bool
     private let continuation: AsyncStream<Void>.Continuation
 
-    init(fileNames: Set<String>, continuation: AsyncStream<Void>.Continuation) {
-        self.fileNames = fileNames
+    init(isRelevant: @escaping @Sendable (URL) -> Bool, continuation: AsyncStream<Void>.Continuation) {
+        self.isRelevant = isRelevant
         self.continuation = continuation
     }
 
     func received(_ paths: [String]) {
-        if paths.contains(where: { fileNames.contains(URL(filePath: $0).lastPathComponent) }) {
+        if paths.contains(where: { isRelevant(URL(filePath: $0)) }) {
             continuation.yield()
         }
     }
@@ -41,8 +45,8 @@ private struct EventStream: @unchecked Sendable {
     private let reference: FSEventStreamRef
     private let queue = DispatchQueue(label: "com.szymonograbek.Bee.FileWatcher")
 
-    init?(watching directory: URL, latency: Duration, sink: Sink) {
-        guard let paths = Self.pathArray(directory.path(percentEncoded: false)) else { return nil }
+    init?(watching directories: [URL], latency: Duration, sink: Sink) {
+        guard let paths = Self.pathArray(directories.map { $0.path(percentEncoded: false) }) else { return nil }
         var context = FSEventStreamContext(
             version: 0,
             info: Unmanaged.passRetained(sink).toOpaque(),
@@ -83,9 +87,12 @@ private struct EventStream: @unchecked Sendable {
         }
     }
 
-    private static func pathArray(_ path: String) -> CFArray? {
-        guard let string = CFStringCreateWithFileSystemRepresentation(nil, path) else { return nil }
-        var values: [UnsafeRawPointer?] = [UnsafeRawPointer(Unmanaged.passUnretained(string).toOpaque())]
-        return withUnsafePointer(to: kCFTypeArrayCallBacks) { CFArrayCreate(nil, &values, 1, $0) }
+    private static func pathArray(_ paths: [String]) -> CFArray? {
+        let strings = paths.compactMap { CFStringCreateWithFileSystemRepresentation(nil, $0) }
+        guard !strings.isEmpty, strings.count == paths.count else { return nil }
+        var values: [UnsafeRawPointer?] = strings.map { UnsafeRawPointer(Unmanaged.passUnretained($0).toOpaque()) }
+        return withExtendedLifetime(strings) {
+            withUnsafePointer(to: kCFTypeArrayCallBacks) { CFArrayCreate(nil, &values, values.count, $0) }
+        }
     }
 }

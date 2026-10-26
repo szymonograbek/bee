@@ -54,6 +54,10 @@ targets:
       - BeeTests
       - Bee/Domain
       - path: Bee/Integrations/T3/T3Activity.swift
+      - path: Bee/Integrations/T3/T3Home.swift
+      - path: Bee/Integrations/Agents/AgentActivity.swift
+      - path: Bee/Integrations/Claude/ClaudeSession.swift
+      - path: Bee/Integrations/Codex/CodexRollout.swift
       - path: Bee/System/LidSleepCommands.swift
       - path: Bee/App/Snapshot.swift
     settings:
