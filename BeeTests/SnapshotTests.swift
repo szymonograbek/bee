@@ -41,11 +41,26 @@ struct SnapshotTests {
     }
 
     @Test
+    func olderSnapshotLeavesBluetoothAndNapsOff() throws {
+        let defaults = try #require(UserDefaults(suiteName: "SnapshotTests.lidAway"))
+        defer { defaults.removePersistentDomain(forName: "SnapshotTests.lidAway") }
+        defaults.set(Data(savedBeforeLidSetting.utf8), forKey: "bee.snapshot.v1")
+
+        let snapshot = Snapshot.load(from: defaults)
+
+        #expect(snapshot.lidBluetooth == .leaveOn)
+        #expect(snapshot.lidBluetoothDevices.isEmpty)
+        #expect(!snapshot.sleepsUntilAutoResume)
+    }
+
+    @Test
     func lidSettingSurvivesSaveAndLoad() throws {
         let defaults = try #require(UserDefaults(suiteName: "SnapshotTests.roundTrip"))
         defer { defaults.removePersistentDomain(forName: "SnapshotTests.roundTrip") }
         var snapshot = Snapshot.load(from: defaults)
         snapshot.keepsAwakeWithLidClosed = true
+        snapshot.lidBluetooth = .disconnectChosen
+        snapshot.lidBluetoothDevices = [try #require(BluetoothAddress("bc:87:fa:27:b0:8d"))]
 
         snapshot.save(to: defaults)
 

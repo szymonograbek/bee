@@ -68,23 +68,42 @@ struct ActivityStatus: Equatable {
 
 extension Activity {
     func status(now: Date, calendar: Calendar) -> ActivityStatus {
+        switch self {
+        case let .awake(reason): reason.status(now: now, calendar: calendar)
+        case let .idle(reason): reason.status(now: now, calendar: calendar)
+        }
+    }
+}
+
+private extension AwakeReason {
+    func status(now: Date, calendar: Calendar) -> ActivityStatus {
         func moment(_ date: Date) -> String { date.moment(relativeTo: now, calendar: calendar) }
         return switch self {
-        case .awake(.manual(.never)):
+        case .manual(.never):
             ActivityStatus(headline: "Awake until you turn it off", detail: "Kept awake from this menu")
-        case let .awake(.manual(.at(end))):
+        case let .manual(.at(end)):
             ActivityStatus(headline: "Awake until \(moment(end))", detail: "Kept awake from this menu")
-        case let .awake(.schedule(until)):
+        case let .schedule(until):
             ActivityStatus(headline: "Awake until \(moment(until))", detail: "Following your schedule")
-        case let .awake(.integration(id, summary)):
+        case let .integration(id, summary):
             ActivityStatus(headline: "Awake while \(id.displayName) works", detail: summary)
-        case let .idle(.paused(until)):
+        case let .awaitingResume(id, resumeAt):
+            ActivityStatus(headline: "Awake until \(id.displayName) resumes", detail: "Resumes at \(moment(resumeAt))")
+        }
+    }
+}
+
+private extension IdleReason {
+    func status(now: Date, calendar: Calendar) -> ActivityStatus {
+        func moment(_ date: Date) -> String { date.moment(relativeTo: now, calendar: calendar) }
+        return switch self {
+        case let .paused(until):
             ActivityStatus(headline: "Paused until \(moment(until))", detail: "Schedule and integrations are on hold")
-        case let .idle(.lowBattery(charge, limit)):
+        case let .lowBattery(charge, limit):
             ActivityStatus(headline: "Idle on low battery", detail: "Battery at \(charge)%, below your \(limit)% limit")
-        case let .idle(.nothingActive(nextScheduledStart?)):
+        case let .nothingActive(nextScheduledStart?):
             ActivityStatus(headline: "Idle", detail: "Schedule starts \(moment(nextScheduledStart))")
-        case .idle(.nothingActive(nil)):
+        case .nothingActive(nil):
             ActivityStatus(headline: "Idle", detail: "Your Mac sleeps as usual")
         }
     }
@@ -92,8 +111,10 @@ extension Activity {
 
 private extension Activity {
     var awakeIntegration: IntegrationID? {
-        guard case let .awake(.integration(id, _)) = self else { return nil }
-        return id
+        switch self {
+        case let .awake(.integration(id, _)), let .awake(.awaitingResume(id, _)): id
+        default: nil
+        }
     }
 }
 
@@ -104,6 +125,7 @@ extension IntegrationState {
         case .checking: "Checking…"
         case .reported(.idle): "Nothing running"
         case let .reported(.active(summary)): summary
+        case let .reported(.awaitingResume(at)): "Auto-resuming at \(at.formatted(date: .omitted, time: .shortened))"
         case let .reported(.unavailable(reason)): reason
         }
     }

@@ -1,9 +1,8 @@
 import AppKit
 import Observation
-import ServiceManagement
 
-/// Owns `BeeState` and every effect derived from it: the power assertion, disabled sleep, timers, pollers, and
-/// persistence.
+/// Owns `BeeState` and every effect derived from it: the power assertion, disabled sleep, naps, Bluetooth, timers,
+/// pollers, and persistence.
 @MainActor
 @Observable
 final class BeeController {
@@ -13,15 +12,23 @@ final class BeeController {
     private(set) var keepsAwakeForT3AutoResume: Bool
     private(set) var loginItem: LoginItemStatus
     private(set) var keepsAwakeWithLidClosed: Bool
+    private(set) var lidBluetooth: LidBluetooth
+    private(set) var lidBluetoothDevices: Set<BluetoothAddress>
+    let bluetoothPermission = BluetoothPermission()
+    private(set) var sleepsUntilAutoResume: Bool
 
     @ObservationIgnored private let calendar: Calendar
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let power = PowerAssertion()
     @ObservationIgnored private let sleepDisabler: SleepDisabler
+    @ObservationIgnored private let napper: ResumeNapper
+    @ObservationIgnored private let bluetooth: LidBluetoothSwitch
+    @ObservationIgnored private let presence = PresenceMonitor()
     @ObservationIgnored private var lastSaved: Snapshot
     @ObservationIgnored private var wakeTask: Task<Void, Never>?
-    @ObservationIgnored private var pollers: [IntegrationID: Task<Void, Never>] = [:]
+    @ObservationIgnored private let pollers = IntegrationPollers()
     @ObservationIgnored private var powerWatcher: Task<Void, Never>?
+    @ObservationIgnored private var lidWatcher: Task<Void, Never>?
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
 
     static func live() -> BeeController {
@@ -44,17 +51,24 @@ final class BeeController {
         self.activity = state.activity(at: Date(), calendar: calendar)
         self.preventsDisplaySleep = snapshot.preventsDisplaySleep
         self.keepsAwakeForT3AutoResume = snapshot.keepsAwakeForT3AutoResume
-        self.loginItem = Self.currentLoginItemStatus()
+        self.loginItem = LoginItem.status
         self.keepsAwakeWithLidClosed = snapshot.keepsAwakeWithLidClosed
-        self.sleepDisabler = SleepDisabler(defaults: defaults)
+        self.lidBluetooth = snapshot.lidBluetooth
+        self.lidBluetoothDevices = snapshot.lidBluetoothDevices
+        self.sleepsUntilAutoResume = snapshot.sleepsUntilAutoResume
+        let sleepDisabler = SleepDisabler(defaults: defaults)
+        self.sleepDisabler = sleepDisabler
+        self.napper = ResumeNapper(sleepDisabler: sleepDisabler)
+        self.bluetooth = LidBluetoothSwitch(defaults: defaults)
         self.calendar = calendar
         self.defaults = defaults
         self.lastSaved = snapshot
         observeSystemEvents()
         watchPowerSource()
+        watchLid()
         // Normalizes a persisted pause or keep-awake that expired while Bee was not running.
         send(.tick)
-        sleepDisabler.refreshPermission()
+        refreshPermissions()
     }
 
     func perform(_ command: BeeCommand) {
@@ -70,8 +84,11 @@ final class BeeController {
             send(.scheduleChanged(schedule))
         case let .setBatteryLimit(limit):
             send(.batteryLimitChanged(limit))
-        case let .setIntegration(id, enabled):
-            setIntegration(id, enabled: enabled)
+        case let .setLidBluetooth(choice, devices):
+            if choice == .disconnectChosen, lidBluetooth != choice { bluetoothPermission.request() }
+            lidBluetooth = choice
+            lidBluetoothDevices = devices
+            reconcile()
         case let .setOption(option, isOn):
             setOption(option, isOn)
         }
@@ -81,14 +98,23 @@ final class BeeController {
         state.integrations[id] != .disabled
     }
 
-    var lidSleepPermission: LidSleepPermission {
-        sleepDisabler.permission
+    var lidSleepPermission: SudoPermission.State {
+        sleepDisabler.permission.state
+    }
+
+    var resumeNapPermission: SudoPermission.State {
+        napper.permission.state
     }
 
     /// Re-reads what the user can change outside Bee: login items and sudoers.
     func refreshSystemStatus() {
-        loginItem = Self.currentLoginItemStatus()
+        loginItem = LoginItem.status
+        refreshPermissions()
+    }
+
+    private func refreshPermissions() {
         sleepDisabler.refreshPermission()
+        Task { await napper.permission.refresh() }
     }
 
     // MARK: State
@@ -102,22 +128,22 @@ final class BeeController {
 
     private func setOption(_ option: BeeOption, _ isOn: Bool) {
         switch option {
+        case let .integration(id):
+            guard isOn != isEnabled(id) else { return }
+            send(.integrationChanged(id, isOn ? .checking : .disabled))
         case .launchAtLogin:
-            setLaunchAtLogin(isOn)
+            loginItem = LoginItem.set(isOn)
         case .preventsDisplaySleep:
             preventsDisplaySleep = isOn
             reconcile()
         case .keepsAwakeWithLidClosed:
-            setKeepsAwakeWithLidClosed(isOn)
+            setNeedingRoot(\.keepsAwakeWithLidClosed, isOn) { await $0.sleepDisabler.requestPermission() }
+        case .sleepsUntilAutoResume:
+            setNeedingRoot(\.sleepsUntilAutoResume, isOn) { await $0.napper.permission.request() }
         case .keepsAwakeForT3AutoResume:
             keepsAwakeForT3AutoResume = isOn
             restartPollers()
         }
-    }
-
-    private func setIntegration(_ id: IntegrationID, enabled: Bool) {
-        guard enabled != isEnabled(id) else { return }
-        send(.integrationChanged(id, enabled ? .checking : .disabled))
     }
 
     /// Level-triggered: brings every effect in line with the current state, so running it twice is harmless.
@@ -125,10 +151,17 @@ final class BeeController {
         let now = Date()
         let current = state.activity(at: now, calendar: calendar)
         if current != activity { activity = current }
-        power.hold(current.isAwake ? (preventsDisplaySleep ? .display : .system) : nil)
-        sleepDisabler.hold(current.isAwake && keepsAwakeWithLidClosed ? .disabled : .allowed)
+        let presence = presence.current(at: now)
+        let nap = sleepsUntilAutoResume ? ResumeNap.wake(for: current, presence: presence, at: now) : nil
+        let keepsAwake = current.isAwake && nap == nil
+        power.hold(keepsAwake ? (preventsDisplaySleep ? .display : .system) : nil)
+        sleepDisabler.hold(keepsAwake && keepsAwakeWithLidClosed ? .disabled : .allowed)
+        // After the sleep disabler, which the napper waits on before sleeping.
+        napper.hold(wakingAt: nap)
+        bluetooth.hold(presence.isPutAway ? lidBluetooth : .leaveOn, devices: lidBluetoothDevices)
         save()
-        armWake(now: now)
+        let napCheck = sleepsUntilAutoResume ? ResumeNap.nextCheck(for: current, presence: presence, at: now) : nil
+        armWake(now: now, napCheck: napCheck)
         reconcilePollers()
     }
 
@@ -139,21 +172,27 @@ final class BeeController {
             enabledIntegrations: Set(IntegrationID.allCases.filter(isEnabled)),
             preventsDisplaySleep: preventsDisplaySleep,
             keepsAwakeWithLidClosed: keepsAwakeWithLidClosed,
+            lidBluetooth: lidBluetooth,
+            lidBluetoothDevices: lidBluetoothDevices,
             keepsAwakeForT3AutoResume: keepsAwakeForT3AutoResume,
+            sleepsUntilAutoResume: sleepsUntilAutoResume,
             batteryLimit: state.batteryLimit
         )
         guard snapshot != lastSaved else { return }
         snapshot.save(to: defaults)
         lastSaved = snapshot
     }
+}
 
-    // MARK: Time
-
-    /// Capped so a missed wall-clock adjustment can never leave Bee stale for long.
-    private func armWake(now: Date) {
+// MARK: Time and system events
+extension BeeController {
+    /// Capped so a missed wall-clock adjustment can never leave Bee stale for long. `napCheck` is when an idle user
+    /// will count as away.
+    private func armWake(now: Date, napCheck: Date?) {
         wakeTask?.cancel()
         let cap = now.addingTimeInterval(5 * 60)
-        let deadline = min(state.nextTransition(after: now, calendar: calendar) ?? cap, cap)
+        let candidates = [state.nextTransition(after: now, calendar: calendar), napCheck, cap]
+        let deadline = candidates.compactMap(\.self).min() ?? cap
         wakeTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: .seconds(deadline.timeIntervalSince(now)))
@@ -167,7 +206,11 @@ final class BeeController {
     private func observeSystemEvents() {
         let workspace = NSWorkspace.shared.notificationCenter
         // Readings taken before sleep are stale.
-        observe(NSWorkspace.didWakeNotification, on: workspace) { $0.restartPollers() }
+        observe(NSWorkspace.didWakeNotification, on: workspace) { bee in
+            bee.presence.noteWake()
+            bee.restartPollers()
+        }
+        observe(NSApplication.didChangeScreenParametersNotification, on: .default) { $0.reconcile() }
         observe(NSApplication.willTerminateNotification, on: .default) { $0.sleepDisabler.releaseBeforeExit() }
         let timeChanges: [Notification.Name] = [
             .NSSystemClockDidChange,
@@ -187,6 +230,14 @@ final class BeeController {
         }
     }
 
+    private func watchLid() {
+        lidWatcher = Task { [weak self] in
+            for await _ in PresenceMonitor.lidChanges() {
+                self?.reconcile()
+            }
+        }
+    }
+
     private func observe(
         _ name: Notification.Name,
         on center: NotificationCenter,
@@ -200,44 +251,24 @@ final class BeeController {
         observers.append(observer)
     }
 
-    // MARK: Lid sleep
+    // MARK: Settings that need root
 
-    /// Turning it on without permission installs the sudoers rule first, and the setting only sticks once
-    /// sudo confirms it.
-    private func setKeepsAwakeWithLidClosed(_ keeps: Bool) {
-        guard keeps else {
-            keepsAwakeWithLidClosed = false
+    /// Turning one on without permission installs the sudoers rule first, and the setting only sticks once sudo
+    /// confirms it.
+    private func setNeedingRoot(
+        _ setting: ReferenceWritableKeyPath<BeeController, Bool>,
+        _ isOn: Bool,
+        grant: @escaping @MainActor (BeeController) async -> Bool
+    ) {
+        guard isOn else {
+            self[keyPath: setting] = false
             reconcile()
             return
         }
         Task {
-            guard await sleepDisabler.requestPermission() else { return }
-            keepsAwakeWithLidClosed = true
+            guard await grant(self) else { return }
+            self[keyPath: setting] = true
             reconcile()
-        }
-    }
-
-    // MARK: Login item
-
-    private func setLaunchAtLogin(_ launches: Bool) {
-        do {
-            if launches {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
-            loginItem = Self.currentLoginItemStatus()
-        } catch {
-            loginItem = .failed(error.localizedDescription)
-        }
-    }
-
-    private static func currentLoginItemStatus() -> LoginItemStatus {
-        switch SMAppService.mainApp.status {
-        case .enabled: .enabled
-        case .requiresApproval: .requiresApproval
-        case .notRegistered, .notFound: .disabled
-        @unknown default: .disabled
         }
     }
 }
@@ -246,42 +277,14 @@ final class BeeController {
 extension BeeController {
     /// Every poller starts over with an immediate read.
     private func restartPollers() {
-        for task in pollers.values { task.cancel() }
-        pollers.removeAll()
+        pollers.stopAll()
         send(.tick)
     }
 
     private func reconcilePollers() {
-        for id in IntegrationID.allCases {
-            if isEnabled(id), pollers[id] == nil {
-                pollers[id] = startPoller(id)
-            } else if !isEnabled(id), let poller = pollers.removeValue(forKey: id) {
-                poller.cancel()
-            }
-        }
-    }
-
-    /// One sequential loop per integration, so reads never overlap. Triggers that arrive during a read
-    /// collapse into one follow-up read. Cancellation also kills child processes.
-    private func startPoller(_ id: IntegrationID) -> Task<Void, Never> {
-        let integration = integration(id)
-        return Task { [weak self] in
-            let triggers = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
-            triggers.continuation.yield()
-            await withDiscardingTaskGroup { group in
-                group.addTask {
-                    for await _ in integration.changes() { triggers.continuation.yield() }
-                }
-                group.addTask {
-                    while (try? await Task.sleep(for: .seconds(60))) != nil { triggers.continuation.yield() }
-                }
-                for await _ in triggers.stream {
-                    let reading = await integration.read()
-                    guard !Task.isCancelled else { break }
-                    self?.send(.integrationChanged(id, .reported(reading)))
-                }
-                group.cancelAll()
-            }
+        let enabled = Set(IntegrationID.allCases.filter(isEnabled))
+        pollers.reconcile(enabled: enabled, make: integration) { [weak self] id, reading in
+            self?.send(.integrationChanged(id, .reported(reading)))
         }
     }
 

@@ -36,6 +36,7 @@ enum AwakeReason: Equatable, Sendable {
     case manual(Mode.Expiry)
     case schedule(until: Date)
     case integration(IntegrationID, summary: String)
+    case awaitingResume(IntegrationID, at: Date)
 }
 
 enum IdleReason: Equatable, Sendable {
@@ -68,7 +69,7 @@ extension BeeState {
         }
     }
 
-    /// Precedence: pause > low battery > manual keep-awake > schedule > integrations.
+    /// Precedence: pause > low battery > manual keep-awake > schedule > active integrations > awaited resumes.
     func activity(at now: Date, calendar: Calendar) -> Activity {
         let mode = mode.expired(at: now)
         if case let .paused(until) = mode {
@@ -85,6 +86,9 @@ extension BeeState {
         }
         if let (id, summary) = firstActiveIntegration {
             return .awake(.integration(id, summary: summary))
+        }
+        if let (id, resumeAt) = firstAwaitedResume {
+            return .awake(.awaitingResume(id, at: resumeAt))
         }
         return .idle(.nothingActive(nextScheduledStart: schedule.nextWindowStart(after: now, calendar: calendar)))
     }
@@ -103,6 +107,12 @@ extension BeeState {
     private var firstActiveIntegration: (IntegrationID, String)? {
         IntegrationID.allCases.lazy
             .compactMap { id in self.integrations[id]?.activeSummary.map { (id, $0) } }
+            .first
+    }
+
+    private var firstAwaitedResume: (IntegrationID, Date)? {
+        IntegrationID.allCases.lazy
+            .compactMap { id in self.integrations[id]?.resumeAt.map { (id, $0) } }
             .first
     }
 }

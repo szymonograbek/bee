@@ -29,12 +29,14 @@ targets:
         LSUIElement: true
         LSApplicationCategoryType: public.app-category.utilities
         NSHumanReadableCopyright: "© 2026 Szymon Ograbek"
+        NSBluetoothAlwaysUsageDescription: Bee disconnects the devices you choose while your Mac's lid is closed, and reconnects them when you open it.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.szymonograbek.Bee
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_USER_SCRIPT_SANDBOXING: NO
+        SWIFT_OBJC_BRIDGING_HEADER: Bee/System/Bee-Bridging-Header.h
     postCompileScripts:
       - name: SwiftLint
         basedOnDependencyAnalysis: false
@@ -58,7 +60,7 @@ targets:
       - path: Bee/Integrations/Agents/AgentActivity.swift
       - path: Bee/Integrations/Claude/ClaudeSession.swift
       - path: Bee/Integrations/Codex/CodexRollout.swift
-      - path: Bee/System/LidSleepCommands.swift
+      - path: Bee/System/PmsetCommands.swift
       - path: Bee/App/Snapshot.swift
     settings:
       base:

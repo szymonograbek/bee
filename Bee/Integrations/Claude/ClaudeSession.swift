@@ -7,8 +7,23 @@ struct ClaudeSession: Equatable, Sendable {
     let cwd: String
     /// When Claude Code says its process started, so a crashed session's reused pid isn't taken for it.
     let processStart: Date?
-    /// Mid-turn, or waiting on the user, for example for a permission.
-    let isWorking: Bool
+    let status: Status
+
+    enum Status: Equatable, Sendable {
+        case busy
+        /// Waiting on the user, for example for a permission. `since` is nil when Claude Code doesn't record it.
+        case waiting(since: Date?)
+        case idle
+    }
+
+    /// Mid-turn, or waiting on the user for at most `WaitingOnUser.grace`. A wait of unknown length counts.
+    func isWorking(at now: Date) -> Bool {
+        switch status {
+        case .busy: true
+        case let .waiting(since): since.map { WaitingOnUser.keepsAwake(since: $0, at: now) } ?? true
+        case .idle: false
+        }
+    }
 }
 
 extension ClaudeSession {
@@ -17,7 +32,16 @@ extension ClaudeSession {
         let processStart = file.procStart.flatMap { start in
             try? Date(start.split(separator: " ").joined(separator: " "), strategy: processStartFormat)
         }
-        return Self(pid: file.pid, cwd: file.cwd, processStart: processStart, isWorking: file.status != "idle")
+        return Self(pid: file.pid, cwd: file.cwd, processStart: processStart, status: status(of: file))
+    }
+
+    /// An unknown status counts as busy, as it did before Claude Code recorded `waiting`.
+    private static func status(of file: File) -> Status {
+        switch file.status {
+        case "idle": .idle
+        case "waiting": .waiting(since: file.statusUpdatedAt.map { Date(timeIntervalSince1970: $0 / 1000) })
+        default: .busy
+        }
     }
 
     /// Like `Mon Oct 26 17:54:09 2026`, in UTC.
@@ -37,5 +61,7 @@ extension ClaudeSession {
         let procStart: String?
         /// `busy`, `waiting`, or `idle`.
         let status: String
+        /// Milliseconds since 1970.
+        let statusUpdatedAt: Double?
     }
 }

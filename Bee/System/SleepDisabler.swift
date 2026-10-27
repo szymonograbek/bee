@@ -1,22 +1,12 @@
 import Foundation
 import Observation
 
-/// Whether sudo lets Bee run `pmset disablesleep` without a password. Sudoers is the source of truth, so it is
-/// never persisted.
-enum LidSleepPermission: Equatable {
-    case checking
-    case installing
-    case granted
-    case missing
-    case failed(String)
-}
-
 /// Disables sleep system-wide with `pmset disablesleep`, which, unlike a power assertion, also holds with the
 /// lid closed. The setting outlives Bee, so Bee records that it turned it on and only turns off what it turned on.
 @MainActor
 @Observable
 final class SleepDisabler {
-    private(set) var permission: LidSleepPermission = .checking
+    let permission = SudoPermission(commands: [SystemSleep.disabled, .allowed].map(PmsetCommands.pmsetArguments(for:)))
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var requested = SystemSleep.allowed
@@ -42,6 +32,11 @@ final class SleepDisabler {
         converge()
     }
 
+    /// Returns once pmset reports the latest `hold`, or once it fails.
+    func settled() async {
+        while let worker { await worker.value }
+    }
+
     /// Quitting must never leave sleep disabled, so this blocks until pmset finishes, for at most two seconds.
     func releaseBeforeExit() {
         worker?.cancel()
@@ -56,8 +51,8 @@ final class SleepDisabler {
     /// One pmset write runs at a time and the latest target wins.
     private func converge() {
         // Waiting for the first check avoids briefly turning off a setting that should stay on.
-        guard permission != .checking else { return }
-        let next = permission == .granted ? requested : .allowed
+        guard permission.state != .checking else { return }
+        let next = permission.state == .granted ? requested : .allowed
         guard next != target else { return }
         target = next
         guard worker == nil else { return }
@@ -91,16 +86,16 @@ final class SleepDisabler {
 
     nonisolated private static func read() async -> SystemSleep? {
         guard
-            let output = try? await ProcessRunner.run(LidSleepCommands.pmset, arguments: ["-g"], timeout: .seconds(5)),
+            let output = try? await ProcessRunner.run(PmsetCommands.pmset, arguments: ["-g"], timeout: .seconds(5)),
             let text = String(bytes: output, encoding: .utf8)
         else { return nil }
-        return LidSleepCommands.systemSleep(fromPmsetOutput: text)
+        return PmsetCommands.systemSleep(fromPmsetOutput: text)
     }
 
     nonisolated private static func write(_ sleep: SystemSleep) async -> Bool {
         let result = try? await ProcessRunner.run(
-            LidSleepCommands.sudo,
-            arguments: ["-n"] + LidSleepCommands.pmsetArguments(for: sleep),
+            PmsetCommands.sudo,
+            arguments: ["-n"] + PmsetCommands.pmsetArguments(for: sleep),
             timeout: .seconds(2)
         )
         return result != nil
@@ -110,75 +105,15 @@ final class SleepDisabler {
 
     func refreshPermission() {
         Task {
-            let checked = await Self.checkPermission()
-            // An install in flight checks again when it finishes.
-            guard permission != .installing else { return }
-            permission = checked
+            await permission.refresh()
             converge()
         }
     }
 
     /// Asks for the admin password once if the sudoers rule is missing. Returns whether permission is granted.
     func requestPermission() async -> Bool {
-        switch permission {
-        case .granted: return true
-        case .checking, .installing: return false
-        case .missing, .failed: break
-        }
-        permission = .installing
-        let install = await Self.installPermission()
-        let checked = await Self.checkPermission()
-        if case let .failed(message) = install, checked != .granted {
-            permission = .failed(message)
-        } else {
-            permission = checked
-        }
+        let granted = await permission.request()
         converge()
-        return checked == .granted
-    }
-
-    /// Granted only when sudo allows both commands without a password, which also recognizes a rule another
-    /// app installed.
-    nonisolated private static func checkPermission() async -> LidSleepPermission {
-        do throws(ProcessFailure) {
-            for sleep in [SystemSleep.disabled, .allowed] {
-                _ = try await ProcessRunner.run(
-                    LidSleepCommands.sudo,
-                    arguments: ["-n", "-l"] + LidSleepCommands.pmsetArguments(for: sleep),
-                    timeout: .seconds(5)
-                )
-            }
-            return .granted
-        } catch {
-            if case .exited = error { return .missing }
-            return .failed("Couldn't check the sleep permission: \(error)")
-        }
-    }
-
-    private enum Install {
-        case installed
-        case cancelled
-        case failed(String)
-    }
-
-    nonisolated private static func installPermission() async -> Install {
-        guard let user = SudoersUser(NSUserName()) else {
-            return .failed("Your account name can't be used in a sudoers rule.")
-        }
-        do throws(ProcessFailure) {
-            _ = try await ProcessRunner.run(
-                LidSleepCommands.osascript,
-                arguments: ["-e", LidSleepCommands.installScript(for: user)],
-                timeout: .seconds(300)
-            )
-            return .installed
-        } catch {
-            guard case let .exited(_, stderr) = error else {
-                return .failed("Couldn't install the sleep permission: \(error)")
-            }
-            // osascript reports a dismissed password prompt as error -128.
-            if stderr.contains("-128") { return .cancelled }
-            return .failed(stderr.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
+        return granted
     }
 }

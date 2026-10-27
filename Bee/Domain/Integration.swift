@@ -22,6 +22,8 @@ enum IntegrationReading: Equatable, Sendable {
     case idle
     /// Work in progress; `summary` is shown to the user, e.g. "2 threads running".
     case active(summary: String)
+    /// Nothing running, but work resumes on its own at `at`, for example after a usage limit resets.
+    case awaitingResume(at: Date)
     /// The integration could not be checked; `reason` is shown to the user.
     case unavailable(reason: String)
 }
@@ -35,6 +37,21 @@ enum IntegrationState: Equatable, Sendable {
     var activeSummary: String? {
         guard case let .reported(.active(summary)) = self else { return nil }
         return summary
+    }
+
+    var resumeAt: Date? {
+        guard case let .reported(.awaitingResume(at)) = self else { return nil }
+        return at
+    }
+}
+
+/// How long a session waiting on the user keeps the Mac awake. By then the user has likely left, and answering
+/// wakes the Mac anyway.
+enum WaitingOnUser {
+    static let grace: TimeInterval = 2 * 60 * 60
+
+    static func keepsAwake(since: Date, at now: Date) -> Bool {
+        now.timeIntervalSince(since) < grace
     }
 }
 

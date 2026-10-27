@@ -103,6 +103,26 @@ struct BeeMachineTests {
         )
     }
 
+    @Test
+    func awaitedResumeKeepsAwakeOutsideTheSchedule() throws {
+        let resumeAt = try date(10, 31, 13)
+        let waiting = state(t3: .reported(.awaitingResume(at: resumeAt)))
+        #expect(
+            waiting.activity(at: try date(10, 31, 12), calendar: testCalendar)
+                == .awake(.awaitingResume(.t3Code, at: resumeAt))
+        )
+    }
+
+    @Test
+    func activeIntegrationBeatsAnotherIntegrationsAwaitedResume() throws {
+        var bee = state(t3: .reported(.awaitingResume(at: try date(10, 31, 13))))
+        bee.integrations[.claudeCode] = .reported(.active(summary: "1 session running"))
+        #expect(
+            bee.activity(at: try date(10, 31, 12), calendar: testCalendar)
+                == .awake(.integration(.claudeCode, summary: "1 session running"))
+        )
+    }
+
     @Test(arguments: [IntegrationState.disabled, .checking, .reported(.idle), .reported(.unavailable(reason: "x"))])
     func inactiveIntegrationLeavesBeeIdleUntilTheNextWindow(t3: IntegrationState) throws {
         #expect(

@@ -25,17 +25,47 @@ struct AgentSessionTests {
 
     // MARK: Claude Code session files
 
-    @Test(arguments: [("busy", true), ("waiting", true), ("idle", false)])
-    func claudeStatus(status: String, isWorking: Bool) throws {
-        let file = #"{"pid":63108,"cwd":"/repo","procStart":"Mon Oct 26 17:54:09 2026","status":"\#(status)"}"#
+    private let statusChange = Date(timeIntervalSince1970: 1_793_085_604.818)
+
+    @Test(arguments: [
+        ("busy", ClaudeSession.Status.busy),
+        ("waiting", .waiting(since: Date(timeIntervalSince1970: 1_793_085_604.818))),
+        ("idle", .idle)
+    ])
+    func claudeStatus(status: String, expected: ClaudeSession.Status) throws {
+        let file = #"""
+            {"pid":63108,"cwd":"/repo","procStart":"Mon Oct 26 17:54:09 2026","status":"\#(status)",\#
+            "statusUpdatedAt":1793085604818}
+            """#
         #expect(
             try ClaudeSession.parse(Data(file.utf8)) == ClaudeSession(
                 pid: 63108,
                 cwd: "/repo",
                 processStart: Date(timeIntervalSince1970: 1_793_037_249),
-                isWorking: isWorking
+                status: expected
             )
         )
+    }
+
+    @Test
+    func claudeWaitingWithoutTimestampCounts() throws {
+        let file = #"{"pid":1,"cwd":"/","status":"waiting"}"#
+        let session = try ClaudeSession.parse(Data(file.utf8))
+        #expect(session.status == .waiting(since: nil))
+        #expect(session.isWorking(at: .distantFuture))
+    }
+
+    @Test
+    func claudeWaitingCountsOnlyDuringTheGrace() {
+        let session = ClaudeSession(pid: 1, cwd: "/", processStart: nil, status: .waiting(since: statusChange))
+        #expect(session.isWorking(at: statusChange.addingTimeInterval(WaitingOnUser.grace - 1)))
+        #expect(!session.isWorking(at: statusChange.addingTimeInterval(WaitingOnUser.grace)))
+    }
+
+    @Test
+    func claudeBusyAndIdleIgnoreTheClock() {
+        #expect(ClaudeSession(pid: 1, cwd: "/", processStart: nil, status: .busy).isWorking(at: .distantFuture))
+        #expect(!ClaudeSession(pid: 1, cwd: "/", processStart: nil, status: .idle).isWorking(at: statusChange))
     }
 
     @Test

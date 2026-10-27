@@ -94,12 +94,10 @@ private struct GeneralSettings: View {
                             + "Bee asks for your password once to allow this."
                     )
                 }
-                .disabled(bee.lidSleepPermission == .checking || bee.lidSleepPermission == .installing)
-                if case let .failed(message) = bee.lidSleepPermission {
-                    Label(message, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                }
+                .disabled(bee.lidSleepPermission.isBusy)
+                PermissionFailure(permission: bee.lidSleepPermission)
             }
+            LidBluetoothSettings(bee: bee)
             if bee.state.power.batteryCharge != nil {
                 BatterySettings(bee: bee)
             }
@@ -163,7 +161,7 @@ private struct IntegrationSettings: View {
                 Section {
                     Toggle(isOn: Binding(
                         get: { bee.isEnabled(id) },
-                        set: { bee.perform(.setIntegration(id, enabled: $0)) }
+                        set: { bee.perform(.setOption(.integration(id), $0)) }
                     )) {
                         Text(id.displayName)
                         Text(id.explanation)
@@ -195,6 +193,18 @@ private struct IntegrationOptions: View {
                 Text("Wait for auto-resume")
                 Text("Stays awake while a thread that hit a usage limit waits to resume on its own.")
             }
+            Toggle(isOn: Binding(
+                get: { bee.sleepsUntilAutoResume },
+                set: { bee.perform(.setOption(.sleepsUntilAutoResume, $0)) }
+            )) {
+                Text("Sleep until it resumes")
+                Text(
+                    "When you're away, lets your Mac sleep and wakes it a minute before the thread resumes. "
+                        + "Bee asks for your password once to allow this."
+                )
+            }
+            .disabled(!bee.keepsAwakeForT3AutoResume || bee.resumeNapPermission.isBusy)
+            PermissionFailure(permission: bee.resumeNapPermission)
         case .claudeCode, .codex:
             EmptyView()
         }
@@ -212,7 +222,7 @@ private struct IntegrationStatus: View {
                 ProgressView().controlSize(.small)
                 Text(state.statusText)
             }
-        case .reported(.active):
+        case .reported(.active), .reported(.awaitingResume):
             symbol("circle.fill", .green)
         case .reported(.unavailable):
             symbol("exclamationmark.triangle.fill", .orange)
@@ -234,9 +244,31 @@ private struct IntegrationStatus: View {
 private extension IntegrationID {
     var explanation: String {
         switch self {
-        case .t3Code: "Keeps your Mac awake while any T3 Code thread is running or waiting on you."
-        case .claudeCode: "Keeps your Mac awake while a Claude Code session you started is working or waiting on you."
+        case .t3Code:
+            "Keeps your Mac awake while any T3 Code thread is running, or for up to 2 hours while it waits on you."
+        case .claudeCode:
+            "Keeps your Mac awake while a Claude Code session you started is working, "
+                + "or for up to 2 hours while it waits on you."
         case .codex: "Keeps your Mac awake while a Codex session you started is working or waiting on you."
         }
+    }
+}
+
+/// Shown under a setting whose sudo permission couldn't be granted.
+private struct PermissionFailure: View {
+    let permission: SudoPermission.State
+
+    var body: some View {
+        if case let .failed(message) = permission {
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+        }
+    }
+}
+
+private extension SudoPermission.State {
+    /// Checking or installing, when the setting can't be changed yet.
+    var isBusy: Bool {
+        self == .checking || self == .installing
     }
 }

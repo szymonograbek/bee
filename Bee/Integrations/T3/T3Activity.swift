@@ -3,7 +3,7 @@ import Foundation
 /// What T3 Code is doing right now, as read from its local database.
 /// Pure Foundation so the hostless test bundle can compile it.
 struct T3Activity: Equatable, Sendable {
-    /// Threads with a run in progress, including runs waiting on the user.
+    /// Threads with a run in progress. A run waiting on the user counts for `WaitingOnUser.grace`.
     var activeThreads: Int
     var activeProjects: Int
     /// When the latest thread armed to auto-resume after a usage limit will resume, if any.
@@ -30,7 +30,7 @@ extension T3Activity {
             return .active(summary: activeProjects > 1 ? "\(threadText) in \(activeProjects) projects" : threadText)
         }
         if keepsAwakeForAutoResume, let resumeAt {
-            return .active(summary: "Auto-resuming at \(resumeAt.formatted(date: .omitted, time: .shortened))")
+            return .awaitingResume(at: resumeAt)
         }
         return .idle
     }
