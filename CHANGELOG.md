@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.3](https://github.com/szymonograbek/bee/compare/v1.4.2...v1.4.3) (2026-10-27)
+
+
+### Bug Fixes
+
+* keep awake while a T3 subagent is still running ([ee8118b](https://github.com/szymonograbek/bee/commit/ee8118b884d6e7e4dfe47cadab4ade5d86bd3bae))
+* keep awake while a T3 subagent is still running ([52bc92a](https://github.com/szymonograbek/bee/commit/52bc92a34e992642e42ec783579bbdb694b0f063))
+
 ## [1.4.2](https://github.com/szymonograbek/bee/compare/v1.4.1...v1.4.2) (2026-10-27)
 
 
