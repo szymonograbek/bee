@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.2](https://github.com/szymonograbek/bee/compare/v1.4.1...v1.4.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* drop type cast that fails release lint ([3f64343](https://github.com/szymonograbek/bee/commit/3f643430b253865d073edaa6c5a48f374f962ae6))
+* drop type cast that fails release lint ([4c4f19f](https://github.com/szymonograbek/bee/commit/4c4f19fc9107d1bd0b9df7627f72e6882c493733))
+
 ## [1.4.1](https://github.com/szymonograbek/bee/compare/v1.4.0...v1.4.1) (2026-10-27)
 
 
