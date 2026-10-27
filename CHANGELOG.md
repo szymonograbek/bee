@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0](https://github.com/szymonograbek/bee/compare/v1.3.0...v1.4.0) (2026-10-27)
+
+
+### Features
+
+* lid-closed Bluetooth, sleep until auto-resume, and a 2-hour wait limit ([e736697](https://github.com/szymonograbek/bee/commit/e7366974e4f311c5680b4fda0ecb071c2c9f9d86))
+* lid-closed Bluetooth, sleep until auto-resume, and a 2-hour wait limit ([96f5418](https://github.com/szymonograbek/bee/commit/96f54180d4795d6b34c1482ad11cc57fec855487))
+
 ## [1.3.0](https://github.com/szymonograbek/bee/compare/v1.2.1...v1.3.0) (2026-10-26)
 
 
