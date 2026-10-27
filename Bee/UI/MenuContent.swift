@@ -43,8 +43,9 @@ struct MenuContent: View {
         }
         Section {
             Button {
-                // A menu bar app is never active on its own, so the window would open behind other apps.
-                NSApp.activate()
+                // macOS refuses a plain activate() from a menu bar app, which leaves Settings behind other apps,
+                // or on another workspace under a tiling window manager. Only the deprecated forced activation works.
+                (NSApp as ForcedActivation).activate(ignoringOtherApps: true)
                 openSettings()
             } label: {
                 Label("Settings…", systemImage: "gearshape")
@@ -187,3 +188,11 @@ private extension Date {
         return "\(formatted(.dateTime.weekday(.abbreviated))) \(time)"
     }
 }
+
+/// Calls NSApplication's deprecated `activate(ignoringOtherApps:)` without a deprecation warning.
+/// Apple has no replacement that can bring a menu bar app forward (FB23508310).
+private protocol ForcedActivation {
+    func activate(ignoringOtherApps: Bool)
+}
+
+extension NSApplication: @MainActor ForcedActivation {}

@@ -17,25 +17,7 @@ struct SettingsView: View {
             }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .background(BringWindowForward())
         .onAppear { bee.refreshSystemStatus() }
-    }
-}
-
-/// macOS may refuse to activate a menu bar app, which would leave Settings behind the app the user came from.
-/// Ordering the window front explicitly works either way.
-private struct BringWindowForward: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { ForwardingView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
-
-    private final class ForwardingView: NSView {
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            guard let window else { return }
-            NSApp.activate()
-            window.orderFrontRegardless()
-            window.makeKey()
-        }
     }
 }
 
