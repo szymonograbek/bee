@@ -20,7 +20,8 @@ struct T3Integration: Integration {
     /// A run waiting on the user stays `running` with a pending runtime request; one pending longer than
     /// `WaitingOnUser.grace` stops counting. A `waiting` run is draining background work after its turn, so it counts.
     /// A thread whose run has ended can still wait on background work its agent started. That counts by T3's own
-    /// rule for showing it as waiting: any awaited task, or any subagent or background task.
+    /// rule for showing it as waiting: any awaited task, or any subagent or background task. A native subagent
+    /// can outlive both, so a thread with an unfinished subagent counts too.
     private static let activityQuery = """
         WITH working AS (
           SELECT r.thread_id FROM orchestration_v2_projection_runs r
@@ -33,7 +34,10 @@ struct T3Integration: Integration {
           FROM orchestration_v2_projection_provider_threads p,
             json_each(p.payload_json, '$.pendingBackgroundTasks') task
           WHERE json_extract(task.value, '$.awaited') = 1
-          OR json_extract(task.value, '$.kind') IN ('subagent', 'background_task'))
+          OR json_extract(task.value, '$.kind') IN ('subagent', 'background_task')
+          UNION
+          SELECT s.thread_id FROM orchestration_v2_projection_subagents s
+          WHERE s.status IN ('pending', 'running'))
         SELECT count(DISTINCT t.thread_id) AS activeThreads, count(DISTINCT t.project_id) AS activeProjects,
           (SELECT max(unixepoch(json_extract(w.payload_json, '$.limitRecovery.resetAt'), 'subsec'))
             FROM orchestration_v2_projection_threads w
