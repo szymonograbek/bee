@@ -19,21 +19,31 @@ struct T3Integration: Integration {
     /// T3 starts the resumed run within seconds of the reset; the margin keeps the Mac awake until it does.
     /// A run waiting on the user stays `running` with a pending runtime request; one pending longer than
     /// `WaitingOnUser.grace` stops counting. A `waiting` run is draining background work after its turn, so it counts.
+    /// A thread whose run has ended can still wait on background work its agent started. That counts by T3's own
+    /// rule for showing it as waiting: any awaited task, or any subagent or background task.
     private static let activityQuery = """
-        SELECT count(DISTINCT r.thread_id) AS activeThreads, count(DISTINCT t.project_id) AS activeProjects,
+        WITH working AS (
+          SELECT r.thread_id FROM orchestration_v2_projection_runs r
+          WHERE r.status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
+          AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runtime_requests q
+            WHERE q.thread_id = r.thread_id AND q.status = 'pending'
+            AND unixepoch(q.created_at) <= unixepoch('now', '-\(Int(WaitingOnUser.grace)) seconds'))
+          UNION
+          SELECT p.thread_id
+          FROM orchestration_v2_projection_provider_threads p,
+            json_each(p.payload_json, '$.pendingBackgroundTasks') task
+          WHERE json_extract(task.value, '$.awaited') = 1
+          OR json_extract(task.value, '$.kind') IN ('subagent', 'background_task'))
+        SELECT count(DISTINCT t.thread_id) AS activeThreads, count(DISTINCT t.project_id) AS activeProjects,
           (SELECT max(unixepoch(json_extract(w.payload_json, '$.limitRecovery.resetAt'), 'subsec'))
             FROM orchestration_v2_projection_threads w
             WHERE w.deleted_at IS NULL AND w.archived_at IS NULL
             AND json_extract(w.payload_json, '$.limitRecovery.autoResume') = 1
             AND unixepoch(json_extract(w.payload_json, '$.limitRecovery.resetAt'), 'subsec')
               > unixepoch('now', '-2 minutes')) AS resumeAt
-        FROM orchestration_v2_projection_runs r
-        JOIN orchestration_v2_projection_threads t ON t.thread_id = r.thread_id
-        WHERE r.status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
-        AND t.deleted_at IS NULL AND t.archived_at IS NULL
-        AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runtime_requests q
-          WHERE q.thread_id = r.thread_id AND q.status = 'pending'
-          AND unixepoch(q.created_at) <= unixepoch('now', '-\(Int(WaitingOnUser.grace)) seconds'))
+        FROM working
+        JOIN orchestration_v2_projection_threads t ON t.thread_id = working.thread_id
+        WHERE t.deleted_at IS NULL AND t.archived_at IS NULL
         """
 
     func read() async -> IntegrationReading {
