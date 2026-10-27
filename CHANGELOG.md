@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.4.1](https://github.com/szymonograbek/bee/compare/v1.4.0...v1.4.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* bring Settings forward even when it is already open ([649b3cd](https://github.com/szymonograbek/bee/commit/649b3cde82edd070d0955e18dddc7d1e2e66134e))
+* bring Settings forward even when it is already open ([a923384](https://github.com/szymonograbek/bee/commit/a9233840d9c8a5b570c6a524f632aa66b88c0af0))
+* keep awake while a T3 thread waits on background work ([0b1db2b](https://github.com/szymonograbek/bee/commit/0b1db2b220e0895dbfaac5fa68415fad657fd06d))
+* keep awake while a T3 thread waits on background work ([1ca3559](https://github.com/szymonograbek/bee/commit/1ca35599e893486d3d74d91ae7fbae57e5f9b85b))
+
 ## [1.4.0](https://github.com/szymonograbek/bee/compare/v1.3.0...v1.4.0) (2026-10-27)
 
 
