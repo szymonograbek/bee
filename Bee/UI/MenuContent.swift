@@ -45,7 +45,8 @@ struct MenuContent: View {
             Button {
                 // macOS refuses a plain activate() from a menu bar app, which leaves Settings behind other apps,
                 // or on another workspace under a tiling window manager. Only the deprecated forced activation works.
-                (NSApp as ForcedActivation).activate(ignoringOtherApps: true)
+                let app: any ForcedActivation = NSApp
+                app.activate(ignoringOtherApps: true)
                 openSettings()
             } label: {
                 Label("Settings…", systemImage: "gearshape")
