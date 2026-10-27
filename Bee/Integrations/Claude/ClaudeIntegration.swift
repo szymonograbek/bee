@@ -1,6 +1,6 @@
 import Foundation
 
-/// Keeps the Mac awake while a Claude Code session the user started is working or waiting on them.
+/// Keeps the Mac awake while a Claude Code session the user started is working, or for a while when it waits on them.
 /// Sessions T3 Code runs are its threads, which the T3 Code integration covers, so they are skipped.
 struct ClaudeIntegration: Integration {
     let id = IntegrationID.claudeCode
@@ -24,7 +24,8 @@ struct ClaudeIntegration: Integration {
         let sessions = files.compactMap { file in
             (try? Data(contentsOf: file)).flatMap { try? ClaudeSession.parse($0) }
         }
-        let working = sessions.filter { $0.isWorking && Self.isLive($0) && !Self.isRunByT3($0) }
+        let now = Date()
+        let working = sessions.filter { $0.isWorking(at: now) && Self.isLive($0) && !Self.isRunByT3($0) }
         return AgentActivity(workingDirectories: working.map(\.cwd)).reading
     }
 

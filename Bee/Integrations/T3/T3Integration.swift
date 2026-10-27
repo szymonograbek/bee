@@ -17,6 +17,8 @@ struct T3Integration: Integration {
     /// The run statuses are the set T3 itself indexes as unfinished. A thread hit by a usage limit carries
     /// `limitRecovery`, which stays after the resume, so only reset times at most two minutes old count.
     /// T3 starts the resumed run within seconds of the reset; the margin keeps the Mac awake until it does.
+    /// A run waiting on the user stays `running` with a pending runtime request; one pending longer than
+    /// `WaitingOnUser.grace` stops counting. A `waiting` run is draining background work after its turn, so it counts.
     private static let activityQuery = """
         SELECT count(DISTINCT r.thread_id) AS activeThreads, count(DISTINCT t.project_id) AS activeProjects,
           (SELECT max(unixepoch(json_extract(w.payload_json, '$.limitRecovery.resetAt'), 'subsec'))
@@ -29,6 +31,9 @@ struct T3Integration: Integration {
         JOIN orchestration_v2_projection_threads t ON t.thread_id = r.thread_id
         WHERE r.status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
         AND t.deleted_at IS NULL AND t.archived_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM orchestration_v2_projection_runtime_requests q
+          WHERE q.thread_id = r.thread_id AND q.status = 'pending'
+          AND unixepoch(q.created_at) <= unixepoch('now', '-\(Int(WaitingOnUser.grace)) seconds'))
         """
 
     func read() async -> IntegrationReading {

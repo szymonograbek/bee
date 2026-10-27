@@ -24,6 +24,8 @@
 	<string>public.app-category.utilities</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Bee disconnects the devices you choose while your Mac's lid is closed, and reconnects them when you open it.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Szymon Ograbek</string>
 </dict>

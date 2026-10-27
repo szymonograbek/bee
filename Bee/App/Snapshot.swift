@@ -7,7 +7,11 @@ struct Snapshot: Codable, Equatable {
     var enabledIntegrations: Set<IntegrationID>
     var preventsDisplaySleep: Bool
     var keepsAwakeWithLidClosed: Bool
+    var lidBluetooth: LidBluetooth
+    /// Kept while another `lidBluetooth` is chosen, so switching back restores the choice.
+    var lidBluetoothDevices: Set<BluetoothAddress>
     var keepsAwakeForT3AutoResume: Bool
+    var sleepsUntilAutoResume: Bool
     var batteryLimit: BatteryLimit
 
     private static let key = "bee.snapshot.v1"
@@ -17,7 +21,10 @@ struct Snapshot: Codable, Equatable {
         enabledIntegrations: Set(IntegrationID.allCases),
         preventsDisplaySleep: false,
         keepsAwakeWithLidClosed: false,
+        lidBluetooth: .leaveOn,
+        lidBluetoothDevices: [],
         keepsAwakeForT3AutoResume: true,
+        sleepsUntilAutoResume: false,
         batteryLimit: .off
     )
 
@@ -45,7 +52,11 @@ extension Snapshot {
         enabledIntegrations = try container.decode(Set<IntegrationID>.self, forKey: .enabledIntegrations)
         preventsDisplaySleep = try container.decode(Bool.self, forKey: .preventsDisplaySleep)
         keepsAwakeWithLidClosed = try container.decodeIfPresent(Bool.self, forKey: .keepsAwakeWithLidClosed) ?? false
+        lidBluetooth = try container.decodeIfPresent(LidBluetooth.self, forKey: .lidBluetooth) ?? .leaveOn
+        lidBluetoothDevices =
+            try container.decodeIfPresent(Set<BluetoothAddress>.self, forKey: .lidBluetoothDevices) ?? []
         keepsAwakeForT3AutoResume = try container.decodeIfPresent(Bool.self, forKey: .keepsAwakeForT3AutoResume) ?? true
+        sleepsUntilAutoResume = try container.decodeIfPresent(Bool.self, forKey: .sleepsUntilAutoResume) ?? false
         batteryLimit = try container.decodeIfPresent(BatteryLimit.self, forKey: .batteryLimit) ?? .off
     }
 }

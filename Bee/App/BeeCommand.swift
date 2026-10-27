@@ -7,16 +7,19 @@ enum BeeCommand: Equatable {
     case resumeAutomatic
     case setSchedule(Schedule)
     case setBatteryLimit(BatteryLimit)
-    case setIntegration(IntegrationID, enabled: Bool)
+    /// `devices` are the ones `LidBluetooth.disconnectChosen` disconnects, kept while another choice is made.
+    case setLidBluetooth(LidBluetooth, devices: Set<BluetoothAddress>)
     case setOption(BeeOption, Bool)
 }
 
 /// An on/off choice in Settings.
 enum BeeOption: Equatable {
+    case integration(IntegrationID)
     case launchAtLogin
     case preventsDisplaySleep
     case keepsAwakeWithLidClosed
     case keepsAwakeForT3AutoResume
+    case sleepsUntilAutoResume
 }
 
 /// Mirrors `SMAppService.mainApp.status`, which is the source of truth, so it is never persisted.

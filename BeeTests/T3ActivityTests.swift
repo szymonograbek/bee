@@ -56,8 +56,7 @@ struct T3ActivityTests {
     @Test
     func pendingAutoResumeKeepsAwakeWhenOptedIn() {
         let activity = T3Activity(activeThreads: 0, activeProjects: 0, resumeAt: resumeAt)
-        let time = resumeAt.formatted(date: .omitted, time: .shortened)
-        #expect(activity.reading(keepsAwakeForAutoResume: true) == .active(summary: "Auto-resuming at \(time)"))
+        #expect(activity.reading(keepsAwakeForAutoResume: true) == .awaitingResume(at: resumeAt))
     }
 
     @Test
