@@ -18,7 +18,7 @@ Bee is ad-hoc signed, not notarized. The cask removes the quarantine flag so Gat
 
 - **Keep Awake** for a preset time (15 minutes to indefinitely).
 - **Pause** for an hour, the rest of today, or the rest of the week.
-- **Schedule**: weekly windows, 08:00 to 16:00 on workdays by default. Windows can run past midnight.
+- **Schedule**: weekly windows, 08:00 to 16:00 on workdays by default. Windows can run past midnight. Turn on **Wake my Mac before it starts** and Bee wakes a sleeping Mac a minute before each window begins. It's off by default.
 - **T3 Code**: keeps the Mac awake while any T3 Code thread is running.
 - **Claude Code** and **Codex**: keep the Mac awake while a session you started is working or waiting on you.
 - **Bluetooth with the lid closed**: optionally turns Bluetooth off, or disconnects devices you choose, while the lid is closed, so headphones don't stay connected to a Mac in your bag.
@@ -33,7 +33,7 @@ Power assertions don't stop a MacBook from sleeping when its lid closes. Turn on
 `pmset` needs root. The first time you turn on a setting that needs it, Bee asks for your password once and installs `/etc/sudoers.d/bee`, which lets your account run only these without a password:
 
 - `/usr/bin/pmset -a disablesleep 1` and `/usr/bin/pmset -a disablesleep 0`
-- `/usr/bin/pmset schedule wake …` and `/usr/bin/pmset schedule cancel wake …`, for **Sleep until it resumes**
+- `/usr/bin/pmset schedule wake …` and `/usr/bin/pmset schedule cancel wake …`, for **Sleep until it resumes** and **Wake my Mac before it starts**
 
 If another app (Amphetamine, for example) already allows the `disablesleep` commands, Bee uses that and doesn't ask. `brew uninstall` removes the file.
 

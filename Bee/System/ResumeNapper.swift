@@ -4,12 +4,6 @@ import Foundation
 /// `pmset schedule` through sudo once the user grants it.
 @MainActor
 final class ResumeNapper {
-    /// Any time works for the check, since the rule allows every time.
-    let permission = SudoPermission(commands: [
-        PmsetCommands.scheduleWakeArguments(at: .distantFuture),
-        PmsetCommands.cancelWakeArguments(at: .distantFuture)
-    ])
-
     private let sleepDisabler: SleepDisabler
     /// The wake of the nap Bee was last asked for.
     private var wake: Date?

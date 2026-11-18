@@ -15,13 +15,16 @@ final class BeeController {
     private(set) var lidBluetooth: LidBluetooth
     private(set) var lidBluetoothDevices: Set<BluetoothAddress>
     let bluetoothPermission = BluetoothPermission()
+    let wakePermission = SudoPermission(check: .runs(PmsetCommands.harmlessWakeCommand))
     private(set) var sleepsUntilAutoResume: Bool
+    private(set) var wakesBeforeSchedule: Bool
 
     @ObservationIgnored private let calendar: Calendar
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let power = PowerAssertion()
     @ObservationIgnored private let sleepDisabler: SleepDisabler
     @ObservationIgnored private let napper: ResumeNapper
+    @ObservationIgnored private let scheduleWaker: ScheduleWaker
     @ObservationIgnored private let bluetooth: LidBluetoothSwitch
     @ObservationIgnored private let presence = PresenceMonitor()
     @ObservationIgnored private var lastSaved: Snapshot
@@ -56,9 +59,11 @@ final class BeeController {
         self.lidBluetooth = snapshot.lidBluetooth
         self.lidBluetoothDevices = snapshot.lidBluetoothDevices
         self.sleepsUntilAutoResume = snapshot.sleepsUntilAutoResume
+        self.wakesBeforeSchedule = snapshot.wakesBeforeSchedule
         let sleepDisabler = SleepDisabler(defaults: defaults)
         self.sleepDisabler = sleepDisabler
         self.napper = ResumeNapper(sleepDisabler: sleepDisabler)
+        self.scheduleWaker = ScheduleWaker(defaults: defaults)
         self.bluetooth = LidBluetoothSwitch(defaults: defaults)
         self.calendar = calendar
         self.defaults = defaults
@@ -68,7 +73,7 @@ final class BeeController {
         watchLid()
         // Normalizes a persisted pause or keep-awake that expired while Bee was not running.
         send(.tick)
-        refreshPermissions()
+        refreshSystemStatus()
     }
 
     func perform(_ command: BeeCommand) {
@@ -102,19 +107,11 @@ final class BeeController {
         sleepDisabler.permission.state
     }
 
-    var resumeNapPermission: SudoPermission.State {
-        napper.permission.state
-    }
-
     /// Re-reads what the user can change outside Bee: login items and sudoers.
     func refreshSystemStatus() {
         loginItem = LoginItem.status
-        refreshPermissions()
-    }
-
-    private func refreshPermissions() {
         sleepDisabler.refreshPermission()
-        Task { await napper.permission.refresh() }
+        Task { await wakePermission.refresh() }
     }
 
     // MARK: State
@@ -139,7 +136,9 @@ final class BeeController {
         case .keepsAwakeWithLidClosed:
             setNeedingRoot(\.keepsAwakeWithLidClosed, isOn) { await $0.sleepDisabler.requestPermission() }
         case .sleepsUntilAutoResume:
-            setNeedingRoot(\.sleepsUntilAutoResume, isOn) { await $0.napper.permission.request() }
+            setNeedingRoot(\.sleepsUntilAutoResume, isOn) { await $0.wakePermission.request() }
+        case .wakesBeforeSchedule:
+            setNeedingRoot(\.wakesBeforeSchedule, isOn) { await $0.wakePermission.request() }
         case .keepsAwakeForT3AutoResume:
             keepsAwakeForT3AutoResume = isOn
             restartPollers()
@@ -159,6 +158,8 @@ final class BeeController {
         // After the sleep disabler, which the napper waits on before sleeping.
         napper.hold(wakingAt: nap)
         bluetooth.hold(presence.isPutAway ? lidBluetooth : .leaveOn, devices: lidBluetoothDevices)
+        let scheduleWake = wakesBeforeSchedule ? ScheduleWake.next(for: state, after: now, calendar: calendar) : nil
+        scheduleWaker.hold(wakingAt: scheduleWake)
         save()
         let napCheck = sleepsUntilAutoResume ? ResumeNap.nextCheck(for: current, presence: presence, at: now) : nil
         armWake(now: now, napCheck: napCheck)
@@ -176,6 +177,7 @@ final class BeeController {
             lidBluetoothDevices: lidBluetoothDevices,
             keepsAwakeForT3AutoResume: keepsAwakeForT3AutoResume,
             sleepsUntilAutoResume: sleepsUntilAutoResume,
+            wakesBeforeSchedule: wakesBeforeSchedule,
             batteryLimit: state.batteryLimit
         )
         guard snapshot != lastSaved else { return }

@@ -20,6 +20,7 @@ enum BeeOption: Equatable {
     case keepsAwakeWithLidClosed
     case keepsAwakeForT3AutoResume
     case sleepsUntilAutoResume
+    case wakesBeforeSchedule
 }
 
 /// Mirrors `SMAppService.mainApp.status`, which is the source of truth, so it is never persisted.

@@ -38,6 +38,9 @@ enum PmsetCommands {
         [pmset.path(percentEncoded: false), "schedule", "cancel", "wake", wakeTime(date, timeZone), wakeOwner]
     }
 
+    /// Runs only with the same rule as every wake command. Cancels a wake at the Unix epoch, which Bee never schedules.
+    static let harmlessWakeCommand = cancelWakeArguments(at: Date(timeIntervalSince1970: 0))
+
     /// Needs no root.
     static let sleepNowArguments = ["sleepnow"]
 

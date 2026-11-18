@@ -15,6 +15,18 @@ struct ScheduleSettingsView: View {
                     Text("Keep awake on a schedule")
                     Text("Bee keeps your Mac awake during these hours every week.")
                 }
+                Toggle(isOn: Binding(
+                    get: { bee.wakesBeforeSchedule },
+                    set: { bee.perform(.setOption(.wakesBeforeSchedule, $0)) }
+                )) {
+                    Text("Wake my Mac before it starts")
+                    Text(
+                        "If your Mac is asleep, Bee wakes it a minute before your hours begin. "
+                            + "Bee asks for your password once to allow this."
+                    )
+                }
+                .disabled(!schedule.wrappedValue.isEnabled || bee.wakePermission.state.isBusy)
+                PermissionFailure(permission: bee.wakePermission.state)
             }
             Group {
                 Section {
