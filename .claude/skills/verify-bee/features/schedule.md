@@ -8,6 +8,7 @@ The user sets weekly windows during which Bee keeps the Mac awake. The default i
 - `schedule-days` picks the weekdays a rule applies to.
 - `schedule-times` sets a rule's From and To times.
 - `schedule-rules` adds and deletes rules.
+- `schedule-wake` (`Wake my Mac before it starts`, off by default) keeps one `pmset` wake owned by `Bee` a minute before the next window. Proof is `pmset -g sched`: `wake at <date> 07:59:00 by 'Bee'` when on, no `Bee` line when off. Turning it on without `/etc/sudoers.d/bee` shows the admin password prompt, which the user has to answer. Turn it off before `cleanup`, or the wake outlives the run.
 
 ## How to get to it (user POV)
 

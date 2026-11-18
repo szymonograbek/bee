@@ -6,7 +6,9 @@ import Observation
 @MainActor
 @Observable
 final class SleepDisabler {
-    let permission = SudoPermission(commands: [SystemSleep.disabled, .allowed].map(PmsetCommands.pmsetArguments(for:)))
+    let permission = SudoPermission(
+        check: .allows([SystemSleep.disabled, .allowed].map(PmsetCommands.pmsetArguments(for:)))
+    )
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var requested = SystemSleep.allowed

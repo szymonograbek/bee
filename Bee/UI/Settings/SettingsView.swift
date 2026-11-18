@@ -185,8 +185,8 @@ private struct IntegrationOptions: View {
                         + "Bee asks for your password once to allow this."
                 )
             }
-            .disabled(!bee.keepsAwakeForT3AutoResume || bee.resumeNapPermission.isBusy)
-            PermissionFailure(permission: bee.resumeNapPermission)
+            .disabled(!bee.keepsAwakeForT3AutoResume || bee.wakePermission.state.isBusy)
+            PermissionFailure(permission: bee.wakePermission.state)
         case .claudeCode, .codex:
             EmptyView()
         }
@@ -237,7 +237,7 @@ private extension IntegrationID {
 }
 
 /// Shown under a setting whose sudo permission couldn't be granted.
-private struct PermissionFailure: View {
+struct PermissionFailure: View {
     let permission: SudoPermission.State
 
     var body: some View {
@@ -248,7 +248,7 @@ private struct PermissionFailure: View {
     }
 }
 
-private extension SudoPermission.State {
+extension SudoPermission.State {
     /// Checking or installing, when the setting can't be changed yet.
     var isBusy: Bool {
         self == .checking || self == .installing

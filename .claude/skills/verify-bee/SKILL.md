@@ -45,7 +45,7 @@ Read-only. Checks: our pid is alive, exactly one Bee process exists, it runs the
 | `bee-verify close-settings` | Closes the Settings window. |
 | `bee-verify screenshot <name>` | Captures the menu bar icon, plus the Settings window if open, into the evidence dir. |
 
-Stable handles are visible titles: menu titles (`Keep Awake`, `Pause`, `Resume`, `Stop Keeping Awake`, `Settings…`, `Quit Bee`), tab names, and picker names (`Bluetooth with the lid closed`), and switch names (`Launch at login`, `Keep the display on`, `Keep awake with the lid closed`, `Stop on low battery`, `Sleep until it resumes`, `Ignore while plugged in`, `Keep awake on a schedule`, `T3 Code`, `Claude Code`, `Codex`). Menu text and the status item label come from `Bee/UI/MenuContent.swift` and `Bee/UI/BeeGlyph.swift`; update the feature map when those strings change.
+Stable handles are visible titles: menu titles (`Keep Awake`, `Pause`, `Resume`, `Stop Keeping Awake`, `Settings…`, `Quit Bee`), tab names, and picker names (`Bluetooth with the lid closed`), and switch names (`Launch at login`, `Keep the display on`, `Keep awake with the lid closed`, `Stop on low battery`, `Sleep until it resumes`, `Ignore while plugged in`, `Keep awake on a schedule`, `Wake my Mac before it starts`, `T3 Code`, `Claude Code`, `Codex`). Menu text and the status item label come from `Bee/UI/MenuContent.swift` and `Bee/UI/BeeGlyph.swift`; update the feature map when those strings change.
 
 Feature recipes live in [features/README.md](features/README.md).
 

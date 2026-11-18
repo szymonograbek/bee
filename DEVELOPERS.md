@@ -24,6 +24,10 @@ When a thread hits a usage limit and T3 is set to auto-resume it, the thread rec
 
 **Sleep until it resumes** (`ResumeNap`) lets the Mac sleep while that wait is the only reason to stay awake and the user is away, then wakes it a minute before the reset with `sudo pmset schedule wake <time> Bee`, followed by `pmset sleepnow`. T3's `UsageLimitRecoveryWorker` sweeps periodically and compares the reset time to the wall clock, so it resumes the thread soon after the wake. Waking the Mac or opening its lid counts as activity, since neither resets the input idle time.
 
+**Wake my Mac before it starts** (`ScheduleWake`) keeps one wake owned by `Bee` a minute before the next schedule window that isn't covered by a pause. Bee records that wake's time in `UserDefaults`. A relaunch then keeps the wake instead of adding a duplicate, and can still cancel it.
+
+`sudo -l` reports whether a rule allows a command, not whether the rule needs a password. With an admin's `ALL` rule and any other `NOPASSWD` rule installed, it passes even when `/etc/sudoers.d/bee` is missing. So the wake permission check runs `pmset schedule cancel wake` for a time Bee never uses, and treats `a password is required` as missing. The `disablesleep` check still uses `sudo -l`, because that command has no harmless form to run.
+
 The query depends on T3's internal schema and can break when T3 changes it. Bee then shows the integration as unavailable rather than guessing.
 
 ## Claude Code and Codex integrations

@@ -12,6 +12,7 @@ struct Snapshot: Codable, Equatable {
     var lidBluetoothDevices: Set<BluetoothAddress>
     var keepsAwakeForT3AutoResume: Bool
     var sleepsUntilAutoResume: Bool
+    var wakesBeforeSchedule: Bool
     var batteryLimit: BatteryLimit
 
     private static let key = "bee.snapshot.v1"
@@ -25,6 +26,7 @@ struct Snapshot: Codable, Equatable {
         lidBluetoothDevices: [],
         keepsAwakeForT3AutoResume: true,
         sleepsUntilAutoResume: false,
+        wakesBeforeSchedule: false,
         batteryLimit: .off
     )
 
@@ -57,6 +59,7 @@ extension Snapshot {
             try container.decodeIfPresent(Set<BluetoothAddress>.self, forKey: .lidBluetoothDevices) ?? []
         keepsAwakeForT3AutoResume = try container.decodeIfPresent(Bool.self, forKey: .keepsAwakeForT3AutoResume) ?? true
         sleepsUntilAutoResume = try container.decodeIfPresent(Bool.self, forKey: .sleepsUntilAutoResume) ?? false
+        wakesBeforeSchedule = try container.decodeIfPresent(Bool.self, forKey: .wakesBeforeSchedule) ?? false
         batteryLimit = try container.decodeIfPresent(BatteryLimit.self, forKey: .batteryLimit) ?? .off
     }
 }

@@ -54,6 +54,15 @@ struct SnapshotTests {
     }
 
     @Test
+    func olderSnapshotLeavesWakingBeforeTheScheduleOff() throws {
+        let defaults = try #require(UserDefaults(suiteName: "SnapshotTests.scheduleWake"))
+        defer { defaults.removePersistentDomain(forName: "SnapshotTests.scheduleWake") }
+        defaults.set(Data(savedBeforeLidSetting.utf8), forKey: "bee.snapshot.v1")
+
+        #expect(!Snapshot.load(from: defaults).wakesBeforeSchedule)
+    }
+
+    @Test
     func lidSettingSurvivesSaveAndLoad() throws {
         let defaults = try #require(UserDefaults(suiteName: "SnapshotTests.roundTrip"))
         defer { defaults.removePersistentDomain(forName: "SnapshotTests.roundTrip") }
