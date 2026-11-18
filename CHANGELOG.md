@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/szymonograbek/bee/compare/v1.4.3...v1.5.0) (2026-11-18)
+
+
+### Features
+
+* wake the Mac before the schedule starts ([1bd905e](https://github.com/szymonograbek/bee/commit/1bd905e1603d734ee5bc29a927a8d016a0e988dc))
+* wake the Mac before the schedule starts ([cec55a8](https://github.com/szymonograbek/bee/commit/cec55a8819b39c48b179e533e48b9b5a7044a3b2))
+
 ## [1.4.3](https://github.com/szymonograbek/bee/compare/v1.4.2...v1.4.3) (2026-10-27)
 
 
